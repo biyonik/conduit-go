@@ -21,15 +21,19 @@
 package main
 
 import (
+	"database/sql"
 	"fmt"
 	"log"
 	"net/http"
+	"os"
 	"time"
 
+	"github.com/biyonik/conduit-go/internal/config"
 	conduitReq "github.com/biyonik/conduit-go/internal/http/request"
 	conduitRes "github.com/biyonik/conduit-go/internal/http/response"
+	"github.com/biyonik/conduit-go/internal/middleware"
 	"github.com/biyonik/conduit-go/internal/router"
-    "github.com/biyonik/conduit-go/internal/middleware"
+	"github.com/biyonik/conduit-go/pkg/database"
 )
 
 // Application yapısı, uygulamanın temel meta bilgilerini saklayan küçük bir
@@ -42,32 +46,58 @@ import (
 type Application struct {
 	Name    string
 	Version string
+	Config  *config.Config
+	DB      *sql.DB
+	Logger  *log.Logger
+	Grammar database.Grammar
+}
+
+// NewDB: *sql.DB'yi ve varsayılan Grammar'ı kullanarak
+// yeni bir QueryBuilder başlatan bir helper fonksiyon.
+func (app *Application) NewDB() *database.QueryBuilder {
+	return database.NewBuilder(app.DB, app.Grammar)
 }
 
 // main, uygulamanın çalıştırıldığı başlangıç noktasıdır. Burada HTTP sunucusu
 // oluşturulur, route tanımlamaları yapılır ve gerekli konfigürasyonlar
 // ayarlanır. Ardından sunucu belirtilen port üzerinden dinlemeye başlar.
 func main() {
+	cfg := config.Load()
+	logger := log.New(os.Stdout, "", log.Ldate|log.Ltime)
+
+	db, err := database.Connect(cfg.DB.DSN)
+	if err != nil {
+		logger.Fatal(err)
+	}
+	defer db.Close()
+
+	// Application (DI Container) GÜNCELLENDİ
 	app := &Application{
 		Name:    "Conduit Go",
-		Version: "1.0.3",
+		Version: "1.0.7", // Sürüm atladık
+		Config:  cfg,
+		DB:      db,
+		Logger:  logger,
+		Grammar: database.NewMySQLGrammar(), // <-- Lehçeyi burada belirliyoruz!
 	}
 
 	r := router.New()
 
-    r.Use(middleware.CORSMiddleware("*"))
+	r.Use(middleware.CORSMiddleware("*"))
 	r.Use(middleware.Logging)
 
-	// Rotalar aynı
 	r.Handle("GET /", app.homeHandler)
 	r.Handle("GET /api/check", app.checkHandler)
+	r.Handle("GET /api/testquery", app.testQueryHandler)
 
 	srv := &http.Server{
-		Addr:    ":8000",
+		Addr:    ":" + cfg.Server.Port,
 		Handler: r,
 	}
 
-	fmt.Printf("🚀 %s v%s çalışıyor (Port: 8000)...\n", app.Name, app.Version)
+	logger.Printf("🚀 %s v%s çalışıyor (Port: %s, Ortam: %s)...",
+		app.Name, app.Version, cfg.Server.Port, cfg.App.Env)
+
 	log.Fatal(srv.ListenAndServe())
 }
 
@@ -133,4 +163,26 @@ func (app *Application) checkHandler(w http.ResponseWriter, r *conduitReq.Reques
 		fmt.Sprintf("Giriş izni verildi. Token: %s", token),
 		map[string]string{"timestamp": time.Now().Format(time.RFC3339)},
 	)
+}
+
+// testQueryHandler (Refaktörden sonra hala çalışıyor olmalı)
+func (app *Application) testQueryHandler(w http.ResponseWriter, r *conduitReq.Request) {
+	app.Logger.Println("Query Builder (Interface'li) testi başladı...")
+
+	// app.NewDB() helper'ı artık bize *doğru* builder'ı veriyor.
+	qb := app.NewDB().
+		Table("users").
+		Select("id", "name").
+		Where("status", "=", "active").
+		Limit(1)
+
+	sql, args := qb.ToSQL()
+
+	data := map[string]interface{}{
+		"message":       "Go Query Builder (Grammar ile) testi başarılı!",
+		"generated_sql": sql,
+		"arguments":     args,
+	}
+
+	conduitRes.Success(w, 200, data, nil)
 }

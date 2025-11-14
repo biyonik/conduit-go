@@ -15,13 +15,14 @@ import (
 // -----------------------------------------------------------------------------
 
 type QueryBuilder struct {
-	db      *sql.DB
-	table   string
-	columns []string
-	wheres  []WhereClause
-	orders  []string
-	limit   int
-	offset  int
+	executor QueryExecutor
+	grammar  Grammar
+	table    string
+	columns  []string
+	wheres   []WhereClause
+	orders   []string
+	limit    int
+	offset   int
 }
 
 // NewBuilder, veritabanı bağlantısını alarak yeni QueryBuilder üretir.

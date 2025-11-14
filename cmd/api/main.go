@@ -21,13 +21,15 @@
 package main
 
 import (
-    "fmt"
-    "log"
-    "net/http"
-    "time"
+	"fmt"
+	"log"
+	"net/http"
+	"time"
 
-    conduitReq "github.com/biyonik/conduit-go/internal/http/request"
-    conduitRes "github.com/biyonik/conduit-go/internal/http/response"
+	conduitReq "github.com/biyonik/conduit-go/internal/http/request"
+	conduitRes "github.com/biyonik/conduit-go/internal/http/response"
+	"github.com/biyonik/conduit-go/internal/router"
+    "github.com/biyonik/conduit-go/internal/middleware"
 )
 
 // Application yapısı, uygulamanın temel meta bilgilerini saklayan küçük bir
@@ -38,36 +40,35 @@ import (
 //   - Name: Uygulamanın adı.
 //   - Version: Uygulamanın versiyon numarası.
 type Application struct {
-    Name    string
-    Version string
+	Name    string
+	Version string
 }
 
 // main, uygulamanın çalıştırıldığı başlangıç noktasıdır. Burada HTTP sunucusu
 // oluşturulur, route tanımlamaları yapılır ve gerekli konfigürasyonlar
 // ayarlanır. Ardından sunucu belirtilen port üzerinden dinlemeye başlar.
 func main() {
-    app := &Application{
-        Name:    "Conduit Go",
-        Version: "1.0.1",
-    }
+	app := &Application{
+		Name:    "Conduit Go",
+		Version: "1.0.3",
+	}
 
-    // HTTP multiplexer (router benzeri yapı)
-    mux := http.NewServeMux()
+	r := router.New()
 
-    // Yeni Go sürümlerinde desteklenen pattern bazlı route tanımları
-    mux.HandleFunc("GET /", app.conduitHandler(app.homeHandler))
-    mux.HandleFunc("GET /api/check", app.conduitHandler(app.checkHandler))
+    r.Use(middleware.CORSMiddleware("*"))
+	r.Use(middleware.Logging)
 
-    // Sunucu ayarları
-    srv := &http.Server{
-        Addr:         ":8000",           // dinlenecek port
-        Handler:      mux,                // router
-        ReadTimeout:  5 * time.Second,    // okuma zaman aşımı
-        WriteTimeout: 10 * time.Second,   // yazma zaman aşımı
-    }
+	// Rotalar aynı
+	r.Handle("GET /", app.homeHandler)
+	r.Handle("GET /api/check", app.checkHandler)
 
-    fmt.Printf("🚀 %s v%s çalışıyor (Port: 8000)...\n", app.Name, app.Version)
-    log.Fatal(srv.ListenAndServe())
+	srv := &http.Server{
+		Addr:    ":8000",
+		Handler: r,
+	}
+
+	fmt.Printf("🚀 %s v%s çalışıyor (Port: 8000)...\n", app.Name, app.Version)
+	log.Fatal(srv.ListenAndServe())
 }
 
 // conduitHandler, gelen HTTP isteklerini uygulamanın geliştirilmiş Request
@@ -83,11 +84,11 @@ func main() {
 // Döndürür:
 //   - http.HandlerFunc: Standart Go handler formatında fonksiyon.
 func (app *Application) conduitHandler(h func(http.ResponseWriter, *conduitReq.Request)) http.HandlerFunc {
-    return func(w http.ResponseWriter, r *http.Request) {
-        req := conduitReq.New(r) // standart request → genişletilmiş model
+	return func(w http.ResponseWriter, r *http.Request) {
+		req := conduitReq.New(r) // standart request → genişletilmiş model
 
-        h(w, req)
-    }
+		h(w, req)
+	}
 }
 
 // homeHandler, uygulamanın ana sayfa endpoint'idir. Kullanıcının JSON
@@ -101,35 +102,35 @@ func (app *Application) conduitHandler(h func(http.ResponseWriter, *conduitReq.R
 //   - w: Yanıt yazıcısı
 //   - r: Geliştirilmiş Request modeli
 func (app *Application) homeHandler(w http.ResponseWriter, r *conduitReq.Request) {
-    if r.IsJSON() {
-        conduitRes.Success(w, 200, "JSON istediniz, JSON geldi!", nil)
-        return
-    }
+	if r.IsJSON() {
+		conduitRes.Success(w, 200, "JSON istediniz, JSON geldi!", nil)
+		return
+	}
 
-    fmt.Fprintf(w, "Merhaba! Burası %s, Adres: %s", app.Name, r.URL.Path)
+	fmt.Fprintf(w, "Merhaba! Burası %s, Adres: %s", app.Name, r.URL.Path)
 }
 
 // checkHandler, Bearer Token doğrulaması yapan küçük bir güvenlik örneği
 // endpoint'idir.
 //
 // Davranış:
-//   1. Bearer token okunur.
-//   2. Token yoksa → 401 Unauthorized döndürülür.
-//   3. Token varsa → Başarılı yanıt + meta veri döndürülür.
+//  1. Bearer token okunur.
+//  2. Token yoksa → 401 Unauthorized döndürülür.
+//  3. Token varsa → Başarılı yanıt + meta veri döndürülür.
 //
 // Meta örneği olarak zaman damgası (timestamp) eklenmiştir.
 func (app *Application) checkHandler(w http.ResponseWriter, r *conduitReq.Request) {
-    token := r.BearerToken()
+	token := r.BearerToken()
 
-    if token == "" {
-        conduitRes.Error(w, 401, "Kimliksiz gezgin! Bearer token nerede?")
-        return
-    }
+	if token == "" {
+		conduitRes.Error(w, 401, "Kimliksiz gezgin! Bearer token nerede?")
+		return
+	}
 
-    conduitRes.Success(
-        w,
-        200,
-        fmt.Sprintf("Giriş izni verildi. Token: %s", token),
-        map[string]string{"timestamp": time.Now().Format(time.RFC3339)},
-    )
+	conduitRes.Success(
+		w,
+		200,
+		fmt.Sprintf("Giriş izni verildi. Token: %s", token),
+		map[string]string{"timestamp": time.Now().Format(time.RFC3339)},
+	)
 }

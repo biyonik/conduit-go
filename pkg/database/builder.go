@@ -26,12 +26,13 @@ type QueryBuilder struct {
 }
 
 // NewBuilder, veritabanı bağlantısını alarak yeni QueryBuilder üretir.
-func NewBuilder(db *sql.DB) *QueryBuilder {
+func NewBuilder(executor QueryExecutor, grammar Grammar) *QueryBuilder {
 	return &QueryBuilder{
-		db:      db,
-		columns: []string{"*"},
-		limit:   0,
-		offset:  0,
+		executor: executor,
+		grammar:  grammar,
+		columns:  []string{"*"},
+		limit:    0,
+		offset:   0,
 	}
 }
 
@@ -79,22 +80,22 @@ func (qb *QueryBuilder) Offset(offset int) *QueryBuilder {
 
 // ToSQL delegasyonu — selectGrammar kullanır.
 func (qb *QueryBuilder) ToSQL() (string, []interface{}) {
-	return selectGrammar(qb)
+	return qb.grammar.CompileSelect(qb)
 }
 
 // Exec: yazma sorgularını (INSERT/UPDATE/DELETE) çalıştırmak için kullanılır.
 // Bu metodlar grammar fonksiyonlarını çağırır ve db.Exec ile yürütür.
 func (qb *QueryBuilder) ExecInsert(data map[string]interface{}) (sql.Result, error) {
-	sqlStr, args := insertGrammar(qb.table, data)
-	return qb.db.Exec(sqlStr, args...)
+	sqlStr, args := qb.grammar.CompileInsert(qb.table, data)
+	return qb.executor.Exec(sqlStr, args...)
 }
 
 func (qb *QueryBuilder) ExecUpdate(data map[string]interface{}) (sql.Result, error) {
-	sqlStr, args := updateGrammar(qb.table, data, qb.wheres)
-	return qb.db.Exec(sqlStr, args...)
+	sqlStr, args := qb.grammar.CompileUpdate(qb.table, data, qb.wheres)
+	return qb.executor.Exec(sqlStr, args...)
 }
 
 func (qb *QueryBuilder) ExecDelete() (sql.Result, error) {
-	sqlStr, args := deleteGrammar(qb.table, qb.wheres)
-	return qb.db.Exec(sqlStr, args...)
+	sqlStr, args := qb.grammar.CompileDelete(qb.table, qb.wheres)
+	return qb.executor.Exec(sqlStr, args...)
 }

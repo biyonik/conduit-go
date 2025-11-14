@@ -27,8 +27,8 @@
 package database
 
 import (
-    "database/sql"
-    "log"
+	"database/sql"
+	"log"
 )
 
 // Transaction
@@ -37,7 +37,8 @@ import (
 // sql.Tx nesnesini saklar ve commit/rollback operasyonlarını
 // daha okunabilir bir API ile gerçekleştirir.
 type Transaction struct {
-    Tx *sql.Tx
+	Tx      *sql.Tx
+	grammar Grammar
 }
 
 // BeginTransaction
@@ -54,14 +55,18 @@ type Transaction struct {
 // Dönüş:
 //   - *Transaction — başlatılan işlem
 //   - error — başarısız olursa hata
-func BeginTransaction(db *sql.DB) (*Transaction, error) {
-    tx, err := db.Begin()
-    if err != nil {
-        return nil, err
-    }
+func BeginTransaction(db *sql.DB, grammar Grammar) (*Transaction, error) {
+	tx, err := db.Begin()
+	if err != nil {
+		return nil, err
+	}
+	log.Println("🔄 Transaction başladı.")
+	return &Transaction{Tx: tx, grammar: grammar}, nil
+}
 
-    log.Println("🔄 Transaction başladı.")
-    return &Transaction{Tx: tx}, nil
+// Transaction'a bağlı yeni bir QueryBuilder oluşturur.
+func (t *Transaction) NewBuilder() *QueryBuilder {
+	return NewBuilder(t.Tx, t.grammar)
 }
 
 // Commit
@@ -71,11 +76,11 @@ func BeginTransaction(db *sql.DB) (*Transaction, error) {
 //
 // Dönüş: error
 func (t *Transaction) Commit() error {
-    err := t.Tx.Commit()
-    if err == nil {
-        log.Println("✅ Transaction commit edildi.")
-    }
-    return err
+	err := t.Tx.Commit()
+	if err == nil {
+		log.Println("✅ Transaction commit edildi.")
+	}
+	return err
 }
 
 // Rollback
@@ -85,9 +90,9 @@ func (t *Transaction) Commit() error {
 //
 // Dönüş: error
 func (t *Transaction) Rollback() error {
-    err := t.Tx.Rollback()
-    if err == nil {
-        log.Println("❌ Transaction geri alındı.")
-    }
-    return err
+	err := t.Tx.Rollback()
+	if err == nil {
+		log.Println("❌ Transaction geri alındı.")
+	}
+	return err
 }

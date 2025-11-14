@@ -1,93 +1,201 @@
-// -----------------------------------------------------------------------------
-// Router Package
-// -----------------------------------------------------------------------------
-// Bu dosya, uygulamanın HTTP yönlendirme (routing) altyapısını oluşturan
-// çekirdek yapı taşını barındırır. Laravel veya Symfony gibi modern web
-// framework'lerinde gördüğümüz Router katmanının Go dünyasına sade ama güçlü
-// bir uyarlaması olarak tasarlanmıştır.
+// ============================================================================
+// Router - Trie Tabanlı, Route Group Destekli HTTP Yönlendirme Sistemi
+// ----------------------------------------------------------------------------
+// Bu dosya, framework'ün HTTP routing altyapısını yönetir. Laravel benzeri bir
+// route deneyimi sunmak için aşağıdaki güçlü özellikler sağlanır:
 //
-// Temel amacı; gelen HTTP isteklerinin doğru handler fonksiyonlarına
-// yönlendirilmesi, bu süreçte middleware zincirinin işletilmesi ve uygulamanın
-// net/http tabanlı mimarisini daha esnek ve okunabilir bir hale getirmektir.
+//   • Trie tabanlı ultra hızlı rota eşleşmesi
+//   • Statik + parametrik path desteği (/users/{id})
+//   • Rota başına middleware
+//   • Global middleware
+//   • Route Group (prefix + middleware birleştirme)
+//   • HTTP Method bazlı ayrılmış routing ağaçları
 //
-// Bu dosyada yer alan başlıca yapılar:
-// - Middleware: Handler öncesi veya sonrası çalışan fonksiyon zinciri.
-// - HandlerFunc: conduit-go'nun Request tipini kullanarak çalışan özel handler.
-// - Router: Tüm routing yapısını yöneten merkezî sistem.
+// Bu dosya, performans, okunabilirlik ve genişletilebilirlik dikkate alınarak
+// yazılmıştır. Tüm routing davranışı tek merkezden kontrol edilir.
+// ============================================================================
 //
-// Router, middleware'leri global olarak uygular; yani bir kez eklenen middleware
-// tüm route’lar için geçerlidir. wrapMiddleware fonksiyonu sayesinde middleware
-// zinciri ters sırayla sarılır, tıpkı popüler Go framework'lerinde olduğu gibi.
-// -----------------------------------------------------------------------------
+// @author    Ahmet Altun
+// @email     ahmet.altun60@gmail.com
+// @github    github.com/biyonik
+// @linkedin  linkedin.com/in/biyonik
+// ============================================================================
 
 package router
 
 import (
-	"log"
+	"context"
 	"net/http"
-	"time"
+	"strings"
 
 	conduitReq "github.com/biyonik/conduit-go/internal/http/request"
 	"github.com/biyonik/conduit-go/internal/middleware"
 )
 
-// Middleware, bir http.Handler alıp onu başka bir http.Handler'a dönüştüren
-// fonksiyondur. Bu yapı sayesinde istek işlenmeden önce (ya da sonra)
-// çalışması istenen işlemler zincir halinde uygulanabilir.
+// Middleware: Standart middleware fonksiyon tipi
 type Middleware func(next http.Handler) http.Handler
 
-// HandlerFunc, Router'ın standart handler tipidir. Gelen isteği conduit
-// Request yapısı üzerinden alır ve böylece framework içerisinde daha zengin
-// bir istek nesnesi kullanmak mümkün olur.
+// HandlerFunc: framework'e özel handler tipi
 type HandlerFunc func(w http.ResponseWriter, r *conduitReq.Request)
 
-// Router, uygulamanın tüm route kayıtlarını, middleware zincirini ve HTTP
-// yönlendirme akışını yöneten yapıdır. net/http'nin ServeMux yapısını temel alır
-// ancak onu daha soyut bir katmanla zenginleştirir.
-type Router struct {
-	mux         *http.ServeMux          // Standart Go router'ı (ServeMux)
-	middlewares []middleware.Middleware // Global middleware listesi
+// Trie düğümü
+type node struct {
+	pathPart string
+	isParam  bool
+
+	handler http.Handler
+
+	children   map[string]*node
+	paramChild *node
 }
 
-// New, yeni bir Router örneği oluşturur. İçerisinde yeni bir ServeMux ve
-// boş bir middleware listesi bulunur.
+// Router: Ana yönlendirici yapısı
+type Router struct {
+	trees           map[string]*node
+	middlewares     []middleware.Middleware
+	NotFoundHandler http.Handler
+}
+
+// New, boş bir router oluşturur
 func New() *Router {
 	return &Router{
-		mux:         http.NewServeMux(),
+		trees:           make(map[string]*node),
+		middlewares:     []middleware.Middleware{},
+		NotFoundHandler: http.NotFoundHandler(),
+	}
+}
+
+// Group, router seviyesinde yeni bir route group başlatır.
+//
+//	api := router.Group("/api")
+//	api.GET("/users", ...)
+func (rt *Router) Group(prefix string) *Group {
+	return &Group{
+		router:      rt,
+		prefix:      prefix,
 		middlewares: []middleware.Middleware{},
 	}
 }
 
-// Use, router'a yeni bir global middleware ekler. Bu middleware tüm handler'lar
-// için geçerli olacaktır. Middleware ekleme sırası önemlidir; wrap edildiğinde
-// ters sırada uygulanır.
+// Use, global middleware ekler
 func (rt *Router) Use(mw middleware.Middleware) {
 	rt.middlewares = append(rt.middlewares, mw)
 }
 
-// Handle, belirtilen route pattern'i ile bir HandlerFunc eşleştirir. Handler
-// önce adapt edilerek http.Handler'a dönüştürülür, ardından mevcut tüm
-// middleware'ler iç içe sarılır ve son hali ServeMux'a kaydedilir.
-func (rt *Router) Handle(pattern string, handler HandlerFunc) {
-	stdHandler := rt.adaptHandler(handler)
-
-	wrappedHandler := rt.wrapMiddleware(stdHandler, rt.middlewares...)
-
-	rt.mux.Handle(pattern, wrappedHandler)
+// splitPath: "/api/users" → ["api","users"]
+func splitPath(path string) []string {
+	parts := strings.Split(path, "/")
+	result := make([]string, 0, len(parts))
+	for _, p := range parts {
+		if p != "" {
+			result = append(result, p)
+		}
+	}
+	return result
 }
 
-// adaptHandler, framework'e özel HandlerFunc'i standart http.Handler'a dönüştürür.
-// Böylece net/http ekosistemi ile tam uyum sağlanmış olur.
+// ============================================================================
+// Rota ekleme (normal Handle)
+// ============================================================================
+
+func (rt *Router) Handle(method, path string, handler HandlerFunc) {
+	rt.HandleWithGroup(method, path, handler, []middleware.Middleware{})
+}
+
+// HandleWithGroup: grup middleware'leriyle birlikte ekleme
+func (rt *Router) HandleWithGroup(method, path string, handler HandlerFunc, groupMiddleware []middleware.Middleware) {
+
+	if rt.trees[method] == nil {
+		rt.trees[method] = &node{pathPart: "/", children: make(map[string]*node)}
+	}
+
+	currentNode := rt.trees[method]
+	parts := splitPath(path)
+
+	for _, part := range parts {
+		var child *node
+		isParam := part[0] == '{' && part[len(part)-1] == '}'
+
+		if isParam {
+			if currentNode.paramChild == nil {
+				currentNode.paramChild = &node{
+					pathPart: part,
+					isParam:  true,
+					children: make(map[string]*node),
+				}
+			}
+			child = currentNode.paramChild
+		} else {
+			if currentNode.children[part] == nil {
+				currentNode.children[part] = &node{
+					pathPart: part,
+					children: make(map[string]*node),
+				}
+			}
+			child = currentNode.children[part]
+		}
+		currentNode = child
+	}
+
+	adapted := rt.adaptHandler(handler)
+
+	// Bu rotaya özel middleware zinciri: global + group
+	final := rt.wrapMiddleware(adapted, append(rt.middlewares, groupMiddleware...)...)
+
+	currentNode.handler = final
+}
+
+// ============================================================================
+// Rota bulma (ServeHTTP)
+// ============================================================================
+
+func (rt *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	root := rt.trees[r.Method]
+	if root == nil {
+		rt.NotFoundHandler.ServeHTTP(w, r)
+		return
+	}
+
+	pathParts := splitPath(r.URL.Path)
+	currentNode := root
+	params := make(map[string]string)
+
+	for _, part := range pathParts {
+		child, found := currentNode.children[part]
+		if found {
+			currentNode = child
+		} else if currentNode.paramChild != nil {
+			currentNode = currentNode.paramChild
+			paramName := currentNode.pathPart[1 : len(currentNode.pathPart)-1]
+			params[paramName] = part
+		} else {
+			rt.NotFoundHandler.ServeHTTP(w, r)
+			return
+		}
+	}
+
+	if currentNode.handler == nil {
+		rt.NotFoundHandler.ServeHTTP(w, r)
+		return
+	}
+
+	if len(params) > 0 {
+		ctx := context.WithValue(r.Context(), "routeParams", params)
+		r = r.WithContext(ctx)
+	}
+
+	currentNode.handler.ServeHTTP(w, r)
+}
+
+// adaptHandler, HandlerFunc → http.Handler dönüştürür
 func (rt *Router) adaptHandler(h HandlerFunc) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		req := conduitReq.New(r) // Standart request özel conduit request'e çevrilir.
+		req := conduitReq.New(r)
 		h(w, req)
 	})
 }
 
-// wrapMiddleware, verilen handler'ı sırayla tüm middleware'lerle sarar.
-// Middleware zincirinin doğru şekilde çalışabilmesi için middleware'ler
-// tersten uygulanır (LIFO mantığı). Bu yöntem Go topluluğunda standarttır.
+// wrapMiddleware, handler'ı middleware zinciriyle sarar (LIFO)
 func (rt *Router) wrapMiddleware(handler http.Handler, middlewares ...middleware.Middleware) http.Handler {
 	for i := len(middlewares) - 1; i >= 0; i-- {
 		handler = middlewares[i](handler)
@@ -95,20 +203,8 @@ func (rt *Router) wrapMiddleware(handler http.Handler, middlewares ...middleware
 	return handler
 }
 
-// ServeHTTP, Router'ın http.Handler arayüzünü implemente etmesini sağlar.
-// Gelen her istek ServeMux'a yönlendirilir ve ilgili handler tetiklenir.
-func (rt *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	rt.mux.ServeHTTP(w, r)
-}
-
-func Logging(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		start := time.Now()
-
-		log.Printf("-> %s %s", r.Method, r.URL.Path)
-
-		next.ServeHTTP(w, r)
-
-		log.Printf("<- %s %s (%s)", r.Method, r.URL.Path, time.Since(start))
-	})
-}
+// Kolaylık metotları
+func (rt *Router) GET(path string, h HandlerFunc)    { rt.Handle("GET", path, h) }
+func (rt *Router) POST(path string, h HandlerFunc)   { rt.Handle("POST", path, h) }
+func (rt *Router) PUT(path string, h HandlerFunc)    { rt.Handle("PUT", path, h) }
+func (rt *Router) DELETE(path string, h HandlerFunc) { rt.Handle("DELETE", path, h) }

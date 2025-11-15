@@ -3,8 +3,9 @@
 // ile ele alınmasını sağlamak amacıyla tasarlanmış küçük ve kullanışlı
 // bir yardımcı pakettir. Bu paket sayesinde, gelen istek nesnesi ile
 // ilgili en sık kullanılan işlemler; içerik tipinin JSON olup olmadığını
-// kontrol etmek, Bearer Token ayrıştırmak ve query parametresi okumak
-// gibi fonksiyonlar üzerinden temiz ve anlaşılır bir biçimde yapılabilir.
+// kontrol etmek, Bearer Token ayrıştırmak, query parametresi okumak ve
+// route parametrelerine erişmek gibi fonksiyonlar üzerinden temiz ve
+// anlaşılır bir biçimde yapılabilir.
 //
 // Modern web uygulamalarında, request doğrulama ve işleme adımları
 // oldukça kritik olduğundan, bu paketin sağladığı basit ama etkili
@@ -15,9 +16,22 @@
 package request
 
 import (
-    "net/http"
-    "strings"
+	"net/http"
+	"strings"
 )
+
+// @author    Ahmet Altun
+// @email     ahmet.altun60@gmail.com
+// @github    github.com/biyonik
+// @linkedin  linkedin.com/in/biyonik
+
+// RouteParamsKey, Go context içinde route parametrelerini güvenli bir şekilde
+// saklamak için kullanılan özel anahtar tipidir.
+// string yerine struct{} kullanmak key çakışmalarını önler.
+type RouteParamsKey struct{}
+
+// requestParamsKey global key instance
+var requestParamsKey = RouteParamsKey{}
 
 // Request yapısı, http.Request yapısının üzerine inşa edilmiş bir sarmalayıcıdır
 // (wrapper). Bu modelin amacı, standart http.Request nesnesine ek
@@ -27,7 +41,7 @@ import (
 // Bu yapı sayesinde, gelen istek üzerinde sık yapılan işlemler daha okunabilir
 // ve daha kısa kodlarla gerçekleştirilebilir.
 type Request struct {
-    *http.Request
+	*http.Request
 }
 
 // New, alınan *http.Request nesnesini bizim Request modelimize dönüştüren
@@ -41,10 +55,10 @@ type Request struct {
 // Döndürür:
 //   - *Request: Geliştirilmiş Request yapısı
 func New(r *http.Request) *Request {
-    return &Request{Request: r}
+	return &Request{Request: r}
 }
 
-// IsJson, gelen HTTP isteğinin Content-Type başlığında "application/json"
+// IsJSON, gelen HTTP isteğinin Content-Type başlığında "application/json"
 // içerip içermediğini kontrol eden bir fonksiyondur. API geliştirme
 // süreçlerinde, gövde içeriğinin JSON olup olmadığını bilmek sıklıkla
 // doğrulama akışlarının ilk adımıdır.
@@ -52,50 +66,52 @@ func New(r *http.Request) *Request {
 // Döndürür:
 //   - bool: İçerik tipi JSON ise true, değilse false.
 func (r *Request) IsJSON() bool {
-    contentType := r.Header.Get("Content-Type")
-    return strings.Contains(contentType, "application/json")
+	contentType := r.Header.Get("Content-Type")
+	return strings.Contains(contentType, "application/json")
 }
 
 // BearerToken, Authorization başlığından Bearer Token değerini güvenli ve
 // kontrollü bir biçimde ayrıştırmak için kullanılan fonksiyondur.
 //
 // HTTP Authorization header formatı örneği:
-//   Authorization: Bearer <TOKEN>
+//
+//	Authorization: Bearer <TOKEN>
 //
 // Fonksiyon Akışı:
-//   1. Authorization başlığı alınır.
-//   2. Başlık boş ise token olmadığı varsayılır ve boş string döndürülür.
-//   3. Başlık iki parçaya ayrılır ("Bearer" + token).
-//   4. Format beklendiği gibi değilse boş string döner.
-//   5. Her şey doğruysa token kısmı döndürülür.
+//  1. Authorization başlığı alınır.
+//  2. Başlık boş ise token olmadığı varsayılır ve boş string döndürülür.
+//  3. Başlık boşluk karakterlerine göre bölünür.
+//  4. Format beklendiği gibi değilse boş string döner.
+//  5. Her şey doğruysa token kısmı döndürülür.
 //
 // Döndürür:
 //   - string: Geçerli bearer token ya da boş string.
 func (r *Request) BearerToken() string {
-    authHeader := r.Header.Get("Authorization")
-    if authHeader == "" {
-        return ""
-    }
+	authHeader := r.Header.Get("Authorization")
+	if authHeader == "" {
+		return ""
+	}
 
-    parts := strings.Split(authHeader, " ")
-    if len(parts) != 2 || strings.ToLower(parts[0]) != "bearer" {
-        return ""
-    }
+	parts := strings.Fields(authHeader)
+	if len(parts) != 2 || strings.ToLower(parts[0]) != "bearer" {
+		return ""
+	}
 
-    return parts[1]
+	return parts[1]
 }
 
 // Query, gelen HTTP isteğinin URL query parametrelerinden bir anahtar
 // üzerinden değer okumayı kolaylaştıran fonksiyondur.
 //
 // Örnek URL:
-//   /users?page=2&sort=name
+//
+//	/users?page=2&sort=name
 //
 // Fonksiyon Akışı:
-//   1. İstenen query anahtarı URL üzerinden okunur.
-//   2. Değer yoksa, fonksiyon geliştirici tarafından verilen
-//      defaultValue değerini döndürür.
-//   3. Değer bulunursa direkt olarak döndürülür.
+//  1. İstenen query anahtarı URL üzerinden okunur.
+//  2. Değer yoksa, fonksiyon geliştirici tarafından verilen
+//     defaultValue değerini döndürür.
+//  3. Değer bulunursa direkt olarak döndürülür.
 //
 // Parametreler:
 //   - key: Okunmak istenen query parametresi.
@@ -104,9 +120,28 @@ func (r *Request) BearerToken() string {
 // Döndürür:
 //   - string: Query parametre değeri veya varsayılan değer.
 func (r *Request) Query(key string, defaultValue string) string {
-    val := r.URL.Query().Get(key)
-    if val == "" {
-        return defaultValue
-    }
-    return val
+	vals, exists := r.URL.Query()[key]
+	if !exists || len(vals) == 0 {
+		return defaultValue
+	}
+	return vals[0]
+}
+
+// RouteParam, route parametrelerini almak için kullanılan fonksiyondur.
+// Bu fonksiyon, router tarafından context'e yerleştirilen parametreleri
+// güvenli bir şekilde okur.
+//
+// Örnek kullanım: /users/{id} -> RouteParam("id")
+//
+// Parametre:
+//   - key: İstenen route parametre anahtarı.
+//
+// Döndürür:
+//   - string: Parametre değeri veya boş string.
+func (r *Request) RouteParam(key string) string {
+	params, ok := r.Context().Value(requestParamsKey).(map[string]string)
+	if !ok {
+		return ""
+	}
+	return params[key]
 }

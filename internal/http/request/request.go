@@ -28,10 +28,10 @@ import (
 // RouteParamsKey, Go context içinde route parametrelerini güvenli bir şekilde
 // saklamak için kullanılan özel anahtar tipidir.
 // string yerine struct{} kullanmak key çakışmalarını önler.
-type RouteParamsKey struct{}
+type RequestParamsKeyType struct{}
 
 // requestParamsKey global key instance
-var requestParamsKey = RouteParamsKey{}
+var RequestParamsKey = RequestParamsKeyType{}
 
 // Request yapısı, http.Request yapısının üzerine inşa edilmiş bir sarmalayıcıdır
 // (wrapper). Bu modelin amacı, standart http.Request nesnesine ek
@@ -139,7 +139,7 @@ func (r *Request) Query(key string, defaultValue string) string {
 // Döndürür:
 //   - string: Parametre değeri veya boş string.
 func (r *Request) RouteParam(key string) string {
-	params, ok := r.Context().Value(requestParamsKey).(map[string]string)
+	params, ok := r.Context().Value(RequestParamsKey).(map[string]string)
 	if !ok {
 		return ""
 	}

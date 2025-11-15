@@ -18,8 +18,8 @@
 package response
 
 import (
-    "encoding/json"
-    "net/http"
+	"encoding/json"
+	"net/http"
 )
 
 // JSONResponse, tüm API yanıtlarının ortak veri sözleşmesini (contract)
@@ -33,12 +33,12 @@ import (
 //   - Data: İşlem başarılıysa döndürülen asli içerik burada taşınır.
 //   - Error: İşlem başarısızsa hata mesajı buraya yazılır.
 //   - Meta: Sayfalama, istatistik, toplam kayıt vb. ek bilgiler için
-//           kullanılan, isteğe bağlı meta veri alanıdır.
+//     kullanılan, isteğe bağlı meta veri alanıdır.
 type JSONResponse struct {
-    Success bool        `json:"success"`
-    Data    interface{} `json:"data,omitempty"`
-    Error   string      `json:"error,omitempty"`
-    Meta    interface{} `json:"meta,omitempty"`
+	Success bool        `json:"success"`
+	Data    interface{} `json:"data,omitempty"`
+	Error   string      `json:"error,omitempty"`
+	Meta    interface{} `json:"meta,omitempty"`
 }
 
 // Send, HTTP yanıtını istenen statü kodu ve JSONResponse yapısı ile
@@ -52,20 +52,20 @@ type JSONResponse struct {
 //   - payload: JSON olarak kodlanıp gönderilecek olan veri yapısı.
 //
 // Fonksiyon Akışı:
-//   1. Content-Type başlığı JSON olarak ayarlanır.
-//   2. HTTP durum kodu yazılır.
-//   3. Gönderilecek payload JSON'a çevrilerek çıktı akışına yazılır.
-//   4. Encode sırasında bir hata oluşursa hata fonksiyona döndürülür.
+//  1. Content-Type başlığı JSON olarak ayarlanır.
+//  2. HTTP durum kodu yazılır.
+//  3. Gönderilecek payload JSON'a çevrilerek çıktı akışına yazılır.
+//  4. Encode sırasında bir hata oluşursa hata fonksiyona döndürülür.
 func Send(w http.ResponseWriter, status int, payload JSONResponse) error {
-    w.Header().Set("Content-Type", "application/json")
-    w.WriteHeader(status)
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
 
-    err := json.NewEncoder(w).Encode(payload)
-    if err != nil {
-        return err
-    }
+	err := json.NewEncoder(w).Encode(payload)
+	if err != nil {
+		return err
+	}
 
-    return nil
+	return nil
 }
 
 // Success, başarılı bir işlem sonucunda standart bir JSON çıktı
@@ -83,11 +83,11 @@ func Send(w http.ResponseWriter, status int, payload JSONResponse) error {
 // Döndürür:
 //   - error: JSON encode sırasında oluşabilecek bir hata.
 func Success(w http.ResponseWriter, status int, data interface{}, meta interface{}) error {
-    return Send(w, status, JSONResponse{
-        Success: true,
-        Data:    data,
-        Meta:    meta,
-    })
+	return Send(w, status, JSONResponse{
+		Success: true,
+		Data:    data,
+		Meta:    meta,
+	})
 }
 
 // Error, başarısız bir işlem sonucunda istemciye hata mesajı
@@ -102,9 +102,23 @@ func Success(w http.ResponseWriter, status int, data interface{}, meta interface
 //
 // Döndürür:
 //   - error: Gönderim veya encode sürecinde oluşan hata.
-func Error(w http.ResponseWriter, status int, errMsg string) error {
-    return Send(w, status, JSONResponse{
-        Success: false,
-        Error:   errMsg,
-    })
+func Error(w http.ResponseWriter, status int, errData any) error {
+	payload := JSONResponse{
+		Success: false,
+	}
+
+	// Gelen hatanın tipine göre JSONResponse'u doldur
+	switch e := errData.(type) {
+	case string:
+		payload.Error = e
+	case error:
+		payload.Error = e.Error()
+	case map[string][]string:
+		payload.Error = "Doğrulama hatası" // Genel mesaj
+		payload.Data = e                   // Detaylı hataları 'data' alanına koy
+	default:
+		payload.Error = "Bilinmeyen bir sunucu hatası oluştu"
+	}
+
+	return Send(w, status, payload)
 }

@@ -78,6 +78,56 @@ func (qb *QueryBuilder) Offset(offset int) *QueryBuilder {
 	return qb
 }
 
+// Get, sorguyu çalıştırır ve sonuçları bir struct slice'ına tarar.
+// 'dest' parametresi bir slice pointer olmalıdır (örn: &[]models.User).
+func (qb *QueryBuilder) Get(dest any) error {
+	sqlStr, args := qb.ToSQL()
+
+	rows, err := qb.executor.Query(sqlStr, args...)
+	if err != nil {
+		return err
+	}
+	defer func(rows *sql.Rows) {
+		err := rows.Close()
+		if err != nil {
+			panic(err)
+		}
+	}(rows)
+
+	// Yeni scanner'ı çağır
+	return ScanSlice(rows, dest)
+}
+
+// First, sorguyu çalıştırır (otomatik 'LIMIT 1' ekler) ve
+// ilk sonucu tek bir struct'a tarar.
+// 'dest' parametresi bir struct pointer olmalıdır (örn: &models.User).
+func (qb *QueryBuilder) First(dest any) error {
+	// 'First' her zaman 'LIMIT 1' olmalıdır
+	qb.Limit(1)
+
+	sqlStr, args := qb.ToSQL()
+
+	rows, err := qb.executor.Query(sqlStr, args...)
+	if err != nil {
+		return err
+	}
+	defer func(rows *sql.Rows) {
+		err := rows.Close()
+		if err != nil {
+			panic(err)
+		}
+	}(rows)
+
+	// İlk satıra ilerle
+	if !rows.Next() {
+		// Satır bulunamadı
+		return sql.ErrNoRows
+	}
+
+	// Yeni scanner'ı çağır
+	return ScanStruct(rows, dest)
+}
+
 // ToSQL delegasyonu — selectGrammar kullanır.
 func (qb *QueryBuilder) ToSQL() (string, []interface{}) {
 	return qb.grammar.CompileSelect(qb)

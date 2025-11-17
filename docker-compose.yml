@@ -1,0 +1,109 @@
+# -----------------------------------------------------------------------------
+# Docker Compose - Development Environment
+# -----------------------------------------------------------------------------
+# Bu dosya, development için gerekli servisleri (MySQL, Redis, vb.) Docker
+# container'ları olarak başlatır.
+#
+# Kullanım:
+#   docker-compose up -d     # Container'ları başlat
+#   docker-compose down      # Container'ları durdur
+#   docker-compose logs -f   # Logları takip et
+# -----------------------------------------------------------------------------
+
+version: '3.8'
+
+services:
+  # ===========================================================================
+  # MySQL Database
+  # ===========================================================================
+  mysql:
+    image: mysql:8.0
+    container_name: conduit-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: rootpassword
+      MYSQL_DATABASE: conduit_go
+      MYSQL_USER: conduit
+      MYSQL_PASSWORD: password
+    ports:
+      - "3306:3306"
+    volumes:
+      # Veritabanı verilerini persist et
+      - mysql_data:/var/lib/mysql
+      # İlk başlatmada çalışacak SQL script'leri
+      - ./scripts/db/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - conduit-network
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ===========================================================================
+  # Redis Cache (Phase 3 için hazırlık)
+  # ===========================================================================
+  redis:
+    image: redis:7-alpine
+    container_name: conduit-redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - conduit-network
+    command: redis-server --appendonly yes --requirepass "redis_password"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # ===========================================================================
+  # phpMyAdmin (Opsiyonel - Database UI)
+  # ===========================================================================
+  phpmyadmin:
+    image: phpmyadmin:latest
+    container_name: conduit-phpmyadmin
+    restart: unless-stopped
+    environment:
+      PMA_HOST: mysql
+      PMA_PORT: 3306
+      PMA_USER: conduit
+      PMA_PASSWORD: password
+    ports:
+      - "8080:80"
+    networks:
+      - conduit-network
+    depends_on:
+      - mysql
+
+  # ===========================================================================
+  # Mailhog (Email Testing için)
+  # ===========================================================================
+  mailhog:
+    image: mailhog/mailhog:latest
+    container_name: conduit-mailhog
+    restart: unless-stopped
+    ports:
+      - "1025:1025"  # SMTP port
+      - "8025:8025"  # Web UI
+    networks:
+      - conduit-network
+
+# =============================================================================
+# Volumes (Veri kalıcılığı için)
+# =============================================================================
+volumes:
+  mysql_data:
+    driver: local
+  redis_data:
+    driver: local
+
+# =============================================================================
+# Networks
+# =============================================================================
+networks:
+  conduit-network:
+    driver: bridge

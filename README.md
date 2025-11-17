@@ -325,11 +325,20 @@ RATE_LIMIT_WINDOW_SECONDS=60
 
 ## 🤝 Contributing
 
-Contributions welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) first.
+We welcome contributions! Please read our [Contributing Guide](CONTRIBUTING.md) to learn about our development process, how to propose bugfixes and improvements, and how to build and test your changes.
+
+### Contributors
+
+Thank you to all the people who have contributed to Conduit-Go! 🎉
+
+<!-- ALL-CONTRIBUTORS-LIST:START -->
+- [@biyonik](https://github.com/biyonik) - Creator & Maintainer
+<!-- ALL-CONTRIBUTORS-LIST:END -->
 
 ## 📄 License
 
-MIT License - see [LICENSE](LICENSE) file.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
 
 ## 👨‍💻 Author
 

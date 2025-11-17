@@ -119,6 +119,12 @@ go.work
 
 !README.md
 !LICENSE
+!CHANGELOG.md
+!CONTRIBUTING.md
+!SECURITY.md
+!docker-compose.yml
+
+!postman/*
 
 # !Makefile
 

@@ -34,11 +34,10 @@ import "time"
 //   - ID:        int64  → birincil anahtar
 //   - CreatedAt: time   → oluşturulma zamanı
 //   - UpdatedAt: time   → güncellenme zamanı
-//
 type BaseModel struct {
-    ID        int64     `json:"id"`
-    CreatedAt time.Time `json:"created_at"`
-    UpdatedAt time.Time `json:"updated_at"`
+	ID        int64     `json:"id" db:"id"`
+	CreatedAt time.Time `json:"created_at" db:"created_at"`
+	UpdatedAt time.Time `json:"updated_at" db:"updated_at"`
 }
 
 // Touch
@@ -46,5 +45,5 @@ type BaseModel struct {
 // UpdatedAt alanını şu anki zamana günceller.
 // Genelde kaydın değiştirilmesi durumunda otomatik tetiklenir.
 func (m *BaseModel) Touch() {
-    m.UpdatedAt = time.Now()
+	m.UpdatedAt = time.Now()
 }

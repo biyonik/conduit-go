@@ -180,7 +180,7 @@ func (rt *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if len(params) > 0 {
-		ctx := context.WithValue(r.Context(), "routeParams", params)
+		ctx := context.WithValue(r.Context(), conduitReq.RequestParamsKey, params)
 		r = r.WithContext(ctx)
 	}
 

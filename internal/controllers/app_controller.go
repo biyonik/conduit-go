@@ -8,9 +8,11 @@ import (
 	"reflect"
 	"time"
 
+	"github.com/biyonik/conduit-go/internal/config"
 	conduitReq "github.com/biyonik/conduit-go/internal/http/request"
 	conduitRes "github.com/biyonik/conduit-go/internal/http/response"
 	"github.com/biyonik/conduit-go/internal/models"
+	"github.com/biyonik/conduit-go/pkg/cache"
 	"github.com/biyonik/conduit-go/pkg/container"
 	"github.com/biyonik/conduit-go/pkg/database"
 )
@@ -20,6 +22,8 @@ type AppController struct {
 	Logger  *log.Logger
 	DB      *sql.DB
 	Grammar database.Grammar
+	Config  *config.Config
+	Cache   cache.Cache // Phase 3
 	AppName string
 }
 
@@ -34,11 +38,15 @@ func NewAppController(c *container.Container) (*AppController, error) {
 	grammarType := reflect.TypeOf((*database.Grammar)(nil)).Elem()
 	grammar := c.MustGet(grammarType).(database.Grammar)
 	db := c.MustGet(reflect.TypeOf((*sql.DB)(nil))).(*sql.DB)
+	cfg := c.MustGet(reflect.TypeOf((*config.Config)(nil))).(*config.Config)
+	cacheDriver := c.MustGet(reflect.TypeOf((*cache.Cache)(nil)).Elem()).(cache.Cache)
 
 	return &AppController{
 		Logger:  logger,
 		DB:      db,
 		Grammar: grammar,
+		Config:  cfg,
+		Cache:   cacheDriver,
 		AppName: "Conduit Go",
 	}, nil
 }
@@ -53,38 +61,30 @@ func (ac *AppController) HomeHandler(w http.ResponseWriter, r *conduitReq.Reques
 }
 
 // HealthHandler, sistem sağlık kontrolü endpoint'i.
-//
-// Bu endpoint kubernetes liveness/readiness probe'ları için kullanılır.
-// Database bağlantısını kontrol eder ve sistem durumunu döndürür.
-//
-// Response Format:
-//
-//	{
-//	  "success": true,
-//	  "data": {
-//	    "status": "healthy",
-//	    "version": "1.0.0",
-//	    "uptime": "5m30s",
-//	    "database": "connected"
-//	  }
-//	}
-//
-// Status Codes:
-// - 200: Sistem sağlıklı
-// - 503: Database bağlantısı yok (service unavailable)
 func (ac *AppController) HealthHandler(w http.ResponseWriter, r *conduitReq.Request) {
-	// Database bağlantısını kontrol et
+	healthData := map[string]interface{}{
+		"status":  "healthy",
+		"version": "1.0.0-phase3",
+		"env":     ac.Config.App.Env,
+	}
+
+	// Database check
 	if err := ac.DB.Ping(); err != nil {
 		ac.Logger.Printf("Health check FAILED: Database ping error: %v", err)
+		healthData["database"] = "error"
 		conduitRes.Error(w, http.StatusServiceUnavailable, "Database bağlantısı kurulamadı")
 		return
 	}
+	healthData["database"] = "connected"
 
-	// Sistem bilgilerini topla
-	healthData := map[string]string{
-		"status":   "healthy",
-		"version":  "1.0.0",
-		"database": "connected",
+	// Cache check
+	healthData["cache_driver"] = ac.Config.Cache.Driver
+	testKey := "health:check:" + time.Now().Format("20060102150405")
+	if err := ac.Cache.Set(testKey, "ok", 1*time.Minute); err != nil {
+		healthData["cache"] = "error"
+	} else {
+		healthData["cache"] = "ok"
+		ac.Cache.Delete(testKey)
 	}
 
 	conduitRes.Success(w, 200, healthData, nil)
@@ -109,7 +109,6 @@ func (ac *AppController) CheckHandler(w http.ResponseWriter, r *conduitReq.Reque
 func (ac *AppController) TestQueryHandler(w http.ResponseWriter, r *conduitReq.Request) {
 	ac.Logger.Println("Query Builder (ORM .Get()) testi başladı...")
 
-	// Test için geçici User struct'ı
 	type User struct {
 		models.BaseModel
 		Name  string `json:"name" db:"name"`
@@ -118,7 +117,6 @@ func (ac *AppController) TestQueryHandler(w http.ResponseWriter, r *conduitReq.R
 
 	var users []User
 
-	// ORM sorgusu
 	err := ac.NewDB().
 		Table("users").
 		Select("id", "name", "email", "created_at", "updated_at").

@@ -21,17 +21,17 @@ import (
 )
 
 // -----------------------------------------------------------------------------
-// Application Entry Point
+// Application Entry Point (Phase 2: Authentication & Authorization)
 // -----------------------------------------------------------------------------
-// Bu dosya, uygulamanın başlangıç noktasıdır. Dependency Injection container'ı
-// başlatır, servisleri kaydeder, router'ı yapılandırır ve HTTP sunucusunu başlatır.
+// Bu dosya, uygulamanın başlangıç noktasıdır. Phase 2'de authentication ve
+// authorization özellikleri eklenmiştir.
 //
-// YENİ: GRACEFUL SHUTDOWN
-// Uygulama artık SIGINT (Ctrl+C) ve SIGTERM sinyallerini yakalar ve
-// graceful shutdown yapar. Bu sayede:
-// - Aktif istekler tamamlanır
-// - Database bağlantıları düzgün kapatılır
-// - Kaynak sızıntıları (resource leak) önlenir
+// YENİ ÖZELLİKLER:
+// - JWT-based authentication
+// - User registration & login
+// - Password reset
+// - Role-based authorization
+// - Protected routes
 // -----------------------------------------------------------------------------
 
 func main() {
@@ -54,7 +54,7 @@ func main() {
 		return log.New(os.Stdout, "[Conduit-Go] ", log.Ldate|log.Ltime|log.Lshortfile), nil
 	})
 
-	// Veritabanı Bağlantısı (*sql.DB)
+	// Veritabanı Bağlantısı
 	c.Register(func(c *container.Container) (*sql.DB, error) {
 		cfg := c.MustGet(reflect.TypeOf((*config.Config)(nil))).(*config.Config)
 		db, err := database.Connect(cfg.DB.DSN)
@@ -71,6 +71,8 @@ func main() {
 
 	// Controller'lar
 	c.Register(controllers.NewAppController)
+	c.Register(controllers.NewAuthController)     // YENİ: Auth Controller
+	c.Register(controllers.NewPasswordController) // YENİ: Password Controller
 
 	// =========================================================================
 	// 3. GEREKLI SERVİSLERİ RESOLVE ET
@@ -78,6 +80,8 @@ func main() {
 	logger := c.MustGet(reflect.TypeOf((*log.Logger)(nil))).(*log.Logger)
 	cfg := c.MustGet(reflect.TypeOf((*config.Config)(nil))).(*config.Config)
 	appController := c.MustGet(reflect.TypeOf((*controllers.AppController)(nil))).(*controllers.AppController)
+	authController := c.MustGet(reflect.TypeOf((*controllers.AuthController)(nil))).(*controllers.AuthController)
+	passwordController := c.MustGet(reflect.TypeOf((*controllers.PasswordController)(nil))).(*controllers.PasswordController)
 
 	// =========================================================================
 	// 4. ROUTER'I OLUŞTUR VE MIDDLEWARE'LERI KAYDET
@@ -85,47 +89,107 @@ func main() {
 	r := router.New()
 
 	// Global Middleware'ler (Sıralama önemli!)
-	r.Use(middleware.PanicRecovery(logger)) // 1. Panic yakalama (en dışta olmalı)
+	r.Use(middleware.PanicRecovery(logger)) // 1. Panic yakalama
 	r.Use(middleware.Logging)               // 2. Request logging
 	r.Use(middleware.CORSMiddleware("*"))   // 3. CORS
-	r.Use(middleware.CSRFProtection())      // 4. CSRF protection (YENİ!)
-	r.Use(middleware.RateLimit(100, 60))    // 5. Rate limiting: 100 req/min (YENİ!)
+	r.Use(middleware.RateLimit(100, 60))    // 4. Rate limiting: 100 req/min
 
 	// =========================================================================
-	// 5. ROTALARI TANIMLA
+	// 5. PUBLIC ROTALARI TANIMLA
 	// =========================================================================
+
+	// Genel endpoint'ler
 	r.GET("/", appController.HomeHandler)
-	r.GET("/health", appController.HealthHandler) // Health check endpoint (YENİ!)
-	r.GET("/api/check", appController.CheckHandler)
-	r.GET("/api/testquery", appController.TestQueryHandler)
-
-	// API Group (daha sıkı rate limit)
-	apiGroup := r.Group("/api/v1")
-	apiGroup.Use(middleware.RateLimit(50, 60)) // API için 50 req/min
-
-	// TODO: İleride eklenecek rotalar:
-	// apiGroup.POST("/register", userController.Register)
-	// apiGroup.POST("/login", userController.Login)
-	// apiGroup.GET("/profile", userController.Profile).Middleware(middleware.Auth("jwt"))
+	r.GET("/health", appController.HealthHandler)
 
 	// =========================================================================
-	// 6. HTTP SUNUCUSUNU YAPΙLANDΙR
+	// 6. AUTH ROTALARI (PUBLIC - Authentication gerektirmez)
+	// =========================================================================
+	authGroup := r.Group("/api/auth")
+
+	// CSRF koruması ekle (POST/PUT/DELETE için)
+	authGroup.Use(middleware.CSRFProtection())
+
+	// Daha sıkı rate limit (brute force koruması)
+	authGroup.Use(middleware.RateLimit(10, 60)) // 10 req/min
+
+	// Authentication endpoint'leri
+	authGroup.POST("/register", authController.Register)
+	authGroup.POST("/login", authController.Login)
+	authGroup.POST("/refresh", authController.RefreshToken)
+
+	// Password reset endpoint'leri
+	authGroup.POST("/forgot-password", passwordController.ForgotPassword)
+	authGroup.POST("/reset-password", passwordController.ResetPassword)
+
+	// =========================================================================
+	// 7. PROTECTED ROTALARI TANIMLA (Authentication gerekir)
+	// =========================================================================
+
+	// Authenticated user endpoint'leri
+	// Authenticated user endpoint'leri
+	r.POST("/api/auth/logout", authController.Logout).
+		Middleware(middleware.Auth())
+
+	r.GET("/api/auth/profile", authController.Profile).
+		Middleware(middleware.Auth())
+
+	r.PUT("/api/auth/profile", authController.UpdateProfile).
+		Middleware(middleware.Auth()).
+		Middleware(middleware.CSRFProtection())
+
+	r.PUT("/api/auth/password", authController.ChangePassword).
+		Middleware(middleware.Auth()).
+		Middleware(middleware.CSRFProtection())
+
+	// =========================================================================
+	// 8. API V1 ROUTES (Authenticated + Stricter Limits)
+	// =========================================================================
+	apiV1 := r.Group("/api/v1")
+	apiV1.Use(middleware.Auth())            // Tüm API endpoint'leri protected
+	apiV1.Use(middleware.RateLimit(50, 60)) // API için daha sıkı limit: 50 req/min
+
+	// Test endpoint (authenticated)
+	apiV1.GET("/check", appController.CheckHandler)
+	apiV1.GET("/testquery", appController.TestQueryHandler)
+
+	// =========================================================================
+	// 9. ADMIN ROTALARI (Sadece admin'ler erişebilir)
+	// =========================================================================
+	adminGroup := r.Group("/api/admin")
+	adminGroup.Use(middleware.Auth())            // Authentication gerekli
+	adminGroup.Use(middleware.Admin())           // Admin role gerekli
+	adminGroup.Use(middleware.RateLimit(30, 60)) // Admin için limit: 30 req/min
+
+	// Admin endpoint'leri (Phase 3'te eklenecek)
+	// adminGroup.GET("/users", adminController.ListUsers)
+	// adminGroup.DELETE("/users/{id}", adminController.DeleteUser)
+
+	// =========================================================================
+	// 10. HTTP SUNUCUSUNU YAPILANDΙR
 	// =========================================================================
 	srv := &http.Server{
 		Addr:           ":" + cfg.Server.Port,
 		Handler:        r,
-		ReadTimeout:    15 * time.Second, // İstek okuma timeout'u
-		WriteTimeout:   15 * time.Second, // Response yazma timeout'u
-		IdleTimeout:    60 * time.Second, // Keep-alive connection timeout'u
-		MaxHeaderBytes: 1 << 20,          // 1 MB (büyük header saldırılarına karşı)
+		ReadTimeout:    15 * time.Second,
+		WriteTimeout:   15 * time.Second,
+		IdleTimeout:    60 * time.Second,
+		MaxHeaderBytes: 1 << 20, // 1 MB
 	}
 
 	// =========================================================================
-	// 7. SUNUCUYU GOROUTINE'DE BAŞLAT (NON-BLOCKING)
+	// 11. SUNUCUYU GOROUTINE'DE BAŞLAT
 	// =========================================================================
 	go func() {
 		logger.Printf("🚀 Conduit Go çalışıyor (Port: %s, Ortam: %s)...", cfg.Server.Port, cfg.App.Env)
 		logger.Printf("📍 Health Check: http://localhost:%s/health", cfg.Server.Port)
+		logger.Printf("🔐 Auth Endpoints:")
+		logger.Printf("   - POST /api/auth/register")
+		logger.Printf("   - POST /api/auth/login")
+		logger.Printf("   - POST /api/auth/logout (protected)")
+		logger.Printf("   - GET  /api/auth/profile (protected)")
+		logger.Printf("   - POST /api/auth/forgot-password")
+		logger.Printf("   - POST /api/auth/reset-password")
 
 		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 			logger.Fatalf("❌ Sunucu başlatılamadı: %v", err)
@@ -133,37 +197,24 @@ func main() {
 	}()
 
 	// =========================================================================
-	// 8. GRACEFUL SHUTDOWN İÇİN SİNYAL DİNLEYİCİSİ
+	// 12. GRACEFUL SHUTDOWN
 	// =========================================================================
-	// OS sinyallerini dinlemek için bir channel oluştur
 	quit := make(chan os.Signal, 1)
-
-	// SIGINT (Ctrl+C) ve SIGTERM sinyallerini yakala
 	signal.Notify(quit, os.Interrupt, syscall.SIGTERM)
-
-	// Bloklanır ve sinyal gelene kadar bekler
 	<-quit
+
 	logger.Println("🛑 Kapanma sinyali alındı, graceful shutdown başlatılıyor...")
 
-	// =========================================================================
-	// 9. GRACEFUL SHUTDOWN PROSEDÜRÜ
-	// =========================================================================
-
-	// Shutdown için timeout context'i oluştur (maksimum 30 saniye)
 	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer shutdownCancel()
 
-	// HTTP sunucusunu gracefully kapat
-	// Bu, yeni bağlantıları kabul etmeyi durdurur ve mevcut isteklerin
-	// tamamlanmasını bekler (timeout'a kadar)
-	logger.Println("⏳ HTTP sunucusu kapatılıyor (aktif istekler tamamlanıyor)...")
+	logger.Println("⏳ HTTP sunucusu kapatılıyor...")
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		logger.Printf("⚠️  HTTP sunucusu zorla kapatıldı: %v", err)
 	} else {
 		logger.Println("✅ HTTP sunucusu gracefully kapatıldı")
 	}
 
-	// Database bağlantılarını kapat
 	logger.Println("⏳ Database bağlantıları kapatılıyor...")
 	db := c.MustGet(reflect.TypeOf((*sql.DB)(nil))).(*sql.DB)
 	if err := db.Close(); err != nil {
@@ -171,12 +222,6 @@ func main() {
 	} else {
 		logger.Println("✅ Database bağlantıları kapatıldı")
 	}
-
-	// TODO: İleride eklenecek cleanup işlemleri:
-	// - Redis bağlantılarını kapat
-	// - Queue worker'ları durdur
-	// - Cache'i flush et
-	// - Metrics'leri kaydet
 
 	logger.Println("👋 Uygulama temiz bir şekilde kapatıldı. Hoşça kal!")
 }

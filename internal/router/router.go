@@ -1,26 +1,5 @@
-// ============================================================================
-// Router - Trie Tabanlı, Route Group Destekli HTTP Yönlendirme Sistemi
-// ----------------------------------------------------------------------------
-// Bu dosya, framework'ün HTTP routing altyapısını yönetir. Laravel benzeri bir
-// route deneyimi sunmak için aşağıdaki güçlü özellikler sağlanır:
-//
-//   • Trie tabanlı ultra hızlı rota eşleşmesi
-//   • Statik + parametrik path desteği (/users/{id})
-//   • Rota başına middleware
-//   • Global middleware
-//   • Route Group (prefix + middleware birleştirme)
-//   • HTTP Method bazlı ayrılmış routing ağaçları
-//
-// Bu dosya, performans, okunabilirlik ve genişletilebilirlik dikkate alınarak
-// yazılmıştır. Tüm routing davranışı tek merkezden kontrol edilir.
-// ============================================================================
-//
-// @author    Ahmet Altun
-// @email     ahmet.altun60@gmail.com
-// @github    github.com/biyonik
-// @linkedin  linkedin.com/in/biyonik
-// ============================================================================
-
+// Package router, HTTP isteklerini yönlendirmek ve route tanımlamak için
+// Laravel-inspired bir router implementasyonu sağlar.
 package router
 
 import (
@@ -32,179 +11,250 @@ import (
 	"github.com/biyonik/conduit-go/internal/middleware"
 )
 
-// Middleware: Standart middleware fonksiyon tipi
-type Middleware func(next http.Handler) http.Handler
+// HandlerFunc, Conduit-Go framework'ünün handler fonksiyon tipidir.
+// Standard http.HandlerFunc'tan farkı, *conduitReq.Request kullanmasıdır.
+type HandlerFunc func(http.ResponseWriter, *conduitReq.Request)
 
-// HandlerFunc: framework'e özel handler tipi
-type HandlerFunc func(w http.ResponseWriter, r *conduitReq.Request)
-
-// Trie düğümü
-type node struct {
-	pathPart string
-	isParam  bool
-
-	handler http.Handler
-
-	children   map[string]*node
-	paramChild *node
-}
-
-// Router: Ana yönlendirici yapısı
+// Router, HTTP routing yapısını temsil eder.
 type Router struct {
-	trees           map[string]*node
-	middlewares     []middleware.Middleware
-	NotFoundHandler http.Handler
+	routes      []*Route
+	middlewares []middleware.Middleware
+	groups      []*RouteGroup
 }
 
-// New, boş bir router oluşturur
+// Route, tek bir HTTP route'unu temsil eder.
+type Route struct {
+	method      string
+	path        string
+	handler     HandlerFunc // Artık kendi type'ımız
+	middlewares []middleware.Middleware
+	router      *Router
+}
+
+// RouteGroup, route gruplarını temsil eder.
+type RouteGroup struct {
+	prefix      string
+	middlewares []middleware.Middleware
+	router      *Router
+}
+
+// New, yeni bir Router instance'ı oluşturur.
 func New() *Router {
 	return &Router{
-		trees:           make(map[string]*node),
-		middlewares:     []middleware.Middleware{},
-		NotFoundHandler: http.NotFoundHandler(),
+		routes:      make([]*Route, 0),
+		middlewares: make([]middleware.Middleware, 0),
+		groups:      make([]*RouteGroup, 0),
 	}
 }
 
-// Group, router seviyesinde yeni bir route group başlatır.
+// Use, router seviyesinde global middleware ekler.
+func (r *Router) Use(middleware middleware.Middleware) {
+	r.middlewares = append(r.middlewares, middleware)
+}
+
+// GET, GET metodu için route tanımlar ve Route objesi döndürür.
+func (r *Router) GET(path string, handler HandlerFunc) *Route {
+	return r.addRoute("GET", path, handler)
+}
+
+// POST, POST metodu için route tanımlar ve Route objesi döndürür.
+func (r *Router) POST(path string, handler HandlerFunc) *Route {
+	return r.addRoute("POST", path, handler)
+}
+
+// PUT, PUT metodu için route tanımlar ve Route objesi döndürür.
+func (r *Router) PUT(path string, handler HandlerFunc) *Route {
+	return r.addRoute("PUT", path, handler)
+}
+
+// DELETE, DELETE metodu için route tanımlar ve Route objesi döndürür.
+func (r *Router) DELETE(path string, handler HandlerFunc) *Route {
+	return r.addRoute("DELETE", path, handler)
+}
+
+// PATCH, PATCH metodu için route tanımlar ve Route objesi döndürür.
+func (r *Router) PATCH(path string, handler HandlerFunc) *Route {
+	return r.addRoute("PATCH", path, handler)
+}
+
+// OPTIONS, OPTIONS metodu için route tanımlar ve Route objesi döndürür.
+func (r *Router) OPTIONS(path string, handler HandlerFunc) *Route {
+	return r.addRoute("OPTIONS", path, handler)
+}
+
+// addRoute, yeni bir route ekler ve Route objesi döndürür.
+func (r *Router) addRoute(method, path string, handler HandlerFunc) *Route {
+	route := &Route{
+		method:      method,
+		path:        path,
+		handler:     handler,
+		middlewares: make([]middleware.Middleware, 0),
+		router:      r,
+	}
+	r.routes = append(r.routes, route)
+	return route
+}
+
+// Middleware, route'a middleware ekler (method chaining için).
 //
-//	api := router.Group("/api")
-//	api.GET("/users", ...)
-func (rt *Router) Group(prefix string) *Group {
-	return &Group{
-		router:      rt,
+// Kullanım:
+//
+//	r.GET("/profile", ProfileHandler).
+//	    Middleware(middleware.Auth()).
+//	    Middleware(middleware.RateLimit(10, 60))
+func (route *Route) Middleware(m middleware.Middleware) *Route {
+	route.middlewares = append(route.middlewares, m)
+	return route
+}
+
+// Group, route grubu oluşturur.
+//
+// Kullanım:
+//
+//	api := r.Group("/api")
+//	api.Use(middleware.Auth())
+//	api.GET("/users", UsersHandler)
+func (r *Router) Group(prefix string) *RouteGroup {
+	group := &RouteGroup{
 		prefix:      prefix,
-		middlewares: []middleware.Middleware{},
+		middlewares: make([]middleware.Middleware, 0),
+		router:      r,
 	}
+	r.groups = append(r.groups, group)
+	return group
 }
 
-// Use, global middleware ekler
-func (rt *Router) Use(mw middleware.Middleware) {
-	rt.middlewares = append(rt.middlewares, mw)
+// Use, grup seviyesinde middleware ekler.
+func (g *RouteGroup) Use(middleware middleware.Middleware) {
+	g.middlewares = append(g.middlewares, middleware)
 }
 
-// splitPath: "/api/users" → ["api","users"]
-func splitPath(path string) []string {
-	parts := strings.Split(path, "/")
-	result := make([]string, 0, len(parts))
-	for _, p := range parts {
-		if p != "" {
-			result = append(result, p)
+// GET, grup içinde GET route tanımlar.
+func (g *RouteGroup) GET(path string, handler HandlerFunc) *Route {
+	fullPath := g.prefix + path
+	route := g.router.addRoute("GET", fullPath, handler)
+	// Grup middleware'lerini route'a ekle
+	route.middlewares = append(g.middlewares, route.middlewares...)
+	return route
+}
+
+// POST, grup içinde POST route tanımlar.
+func (g *RouteGroup) POST(path string, handler HandlerFunc) *Route {
+	fullPath := g.prefix + path
+	route := g.router.addRoute("POST", fullPath, handler)
+	route.middlewares = append(g.middlewares, route.middlewares...)
+	return route
+}
+
+// PUT, grup içinde PUT route tanımlar.
+func (g *RouteGroup) PUT(path string, handler HandlerFunc) *Route {
+	fullPath := g.prefix + path
+	route := g.router.addRoute("PUT", fullPath, handler)
+	route.middlewares = append(g.middlewares, route.middlewares...)
+	return route
+}
+
+// DELETE, grup içinde DELETE route tanımlar.
+func (g *RouteGroup) DELETE(path string, handler HandlerFunc) *Route {
+	fullPath := g.prefix + path
+	route := g.router.addRoute("DELETE", fullPath, handler)
+	route.middlewares = append(g.middlewares, route.middlewares...)
+	return route
+}
+
+// PATCH, grup içinde PATCH route tanımlar.
+func (g *RouteGroup) PATCH(path string, handler HandlerFunc) *Route {
+	fullPath := g.prefix + path
+	route := g.router.addRoute("PATCH", fullPath, handler)
+	route.middlewares = append(g.middlewares, route.middlewares...)
+	return route
+}
+
+// ServeHTTP, http.Handler interface'ini implement eder.
+func (r *Router) ServeHTTP(w http.ResponseWriter, req *http.Request) {
+	// Global middleware'leri uygula
+	var handler http.Handler = http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+		r.handleRequest(w, req)
+	})
+
+	// Global middleware chain oluştur (reverse order)
+	for i := len(r.middlewares) - 1; i >= 0; i-- {
+		handler = r.middlewares[i](handler)
+	}
+
+	handler.ServeHTTP(w, req)
+}
+
+// handleRequest, gelen isteği uygun route'a yönlendirir.
+func (r *Router) handleRequest(w http.ResponseWriter, req *http.Request) {
+	// Route'ları kontrol et
+	for _, route := range r.routes {
+		if route.method != req.Method {
+			continue
 		}
-	}
-	return result
-}
 
-// ============================================================================
-// Rota ekleme (normal Handle)
-// ============================================================================
-
-func (rt *Router) Handle(method, path string, handler HandlerFunc) {
-	rt.HandleWithGroup(method, path, handler, []middleware.Middleware{})
-}
-
-// HandleWithGroup: grup middleware'leriyle birlikte ekleme
-func (rt *Router) HandleWithGroup(method, path string, handler HandlerFunc, groupMiddleware []middleware.Middleware) {
-
-	if rt.trees[method] == nil {
-		rt.trees[method] = &node{pathPart: "/", children: make(map[string]*node)}
-	}
-
-	currentNode := rt.trees[method]
-	parts := splitPath(path)
-
-	for _, part := range parts {
-		var child *node
-		isParam := part[0] == '{' && part[len(part)-1] == '}'
-
-		if isParam {
-			if currentNode.paramChild == nil {
-				currentNode.paramChild = &node{
-					pathPart: part,
-					isParam:  true,
-					children: make(map[string]*node),
-				}
-			}
-			child = currentNode.paramChild
-		} else {
-			if currentNode.children[part] == nil {
-				currentNode.children[part] = &node{
-					pathPart: part,
-					children: make(map[string]*node),
-				}
-			}
-			child = currentNode.children[part]
+		// Route parametrelerini match et
+		params, matched := r.matchRoute(route.path, req.URL.Path)
+		if !matched {
+			continue
 		}
-		currentNode = child
-	}
 
-	adapted := rt.adaptHandler(handler)
+		// Route parametrelerini context'e ekle
+		ctx := context.WithValue(req.Context(), conduitReq.RequestParamsKey, params)
+		req = req.WithContext(ctx)
 
-	// Bu rotaya özel middleware zinciri: global + group
-	final := rt.wrapMiddleware(adapted, append(rt.middlewares, groupMiddleware...)...)
+		// Route-specific middleware'leri uygula
+		var handler http.Handler = http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+			// http.Request'i conduitReq.Request'e dönüştür
+			conduitRequest := conduitReq.New(req)
+			// Handler'ı çağır (artık doğru signature)
+			route.handler(w, conduitRequest)
+		})
 
-	currentNode.handler = final
-}
+		// Route middleware chain oluştur (reverse order)
+		for i := len(route.middlewares) - 1; i >= 0; i-- {
+			handler = route.middlewares[i](handler)
+		}
 
-// ============================================================================
-// Rota bulma (ServeHTTP)
-// ============================================================================
-
-func (rt *Router) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	root := rt.trees[r.Method]
-	if root == nil {
-		rt.NotFoundHandler.ServeHTTP(w, r)
+		handler.ServeHTTP(w, req)
 		return
 	}
 
-	pathParts := splitPath(r.URL.Path)
-	currentNode := root
+	// 404 Not Found
+	http.NotFound(w, req)
+}
+
+// matchRoute, route pattern'i ile URL path'ini karşılaştırır.
+// Parametreleri extract eder ve match durumunu döndürür.
+//
+// Pattern örnekleri:
+//
+//	/users/{id}
+//	/posts/{id}/comments/{commentId}
+func (r *Router) matchRoute(pattern, path string) (map[string]string, bool) {
+	patternParts := strings.Split(strings.Trim(pattern, "/"), "/")
+	pathParts := strings.Split(strings.Trim(path, "/"), "/")
+
+	// Part sayısı farklıysa match değildir
+	if len(patternParts) != len(pathParts) {
+		return nil, false
+	}
+
 	params := make(map[string]string)
 
-	for _, part := range pathParts {
-		child, found := currentNode.children[part]
-		if found {
-			currentNode = child
-		} else if currentNode.paramChild != nil {
-			currentNode = currentNode.paramChild
-			paramName := currentNode.pathPart[1 : len(currentNode.pathPart)-1]
-			params[paramName] = part
-		} else {
-			rt.NotFoundHandler.ServeHTTP(w, r)
-			return
+	for i, part := range patternParts {
+		// Parametre mi? (örn: {id})
+		if strings.HasPrefix(part, "{") && strings.HasSuffix(part, "}") {
+			paramName := strings.Trim(part, "{}")
+			params[paramName] = pathParts[i]
+			continue
+		}
+
+		// Statik part eşleşmeli
+		if part != pathParts[i] {
+			return nil, false
 		}
 	}
 
-	if currentNode.handler == nil {
-		rt.NotFoundHandler.ServeHTTP(w, r)
-		return
-	}
-
-	if len(params) > 0 {
-		ctx := context.WithValue(r.Context(), conduitReq.RequestParamsKey, params)
-		r = r.WithContext(ctx)
-	}
-
-	currentNode.handler.ServeHTTP(w, r)
+	return params, true
 }
-
-// adaptHandler, HandlerFunc → http.Handler dönüştürür
-func (rt *Router) adaptHandler(h HandlerFunc) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		req := conduitReq.New(r)
-		h(w, req)
-	})
-}
-
-// wrapMiddleware, handler'ı middleware zinciriyle sarar (LIFO)
-func (rt *Router) wrapMiddleware(handler http.Handler, middlewares ...middleware.Middleware) http.Handler {
-	for i := len(middlewares) - 1; i >= 0; i-- {
-		handler = middlewares[i](handler)
-	}
-	return handler
-}
-
-// Kolaylık metotları
-func (rt *Router) GET(path string, h HandlerFunc)    { rt.Handle("GET", path, h) }
-func (rt *Router) POST(path string, h HandlerFunc)   { rt.Handle("POST", path, h) }
-func (rt *Router) PUT(path string, h HandlerFunc)    { rt.Handle("PUT", path, h) }
-func (rt *Router) DELETE(path string, h HandlerFunc) { rt.Handle("DELETE", path, h) }

@@ -11,51 +11,33 @@ Modern, Laravel-inspired web framework for Go. Built with security, performance,
 ### 🔒 Phase 1: Security & Stability (✅ COMPLETED)
 
 - **SQL Injection Protection**
-    - Whitelist-based operator validation
-    - Prepared statement bindings
-    - Identifier sanitization
-    - Direction parameter validation
-
 - **CSRF Protection**
-    - Token-based validation
-    - Cookie + header support
-    - Session-based token storage
-    - Timing-attack resistant
-
 - **Rate Limiting**
-    - Token bucket algorithm
-    - IP-based limiting
-    - Configurable limits
-    - Memory leak protection
-
 - **Graceful Shutdown**
-    - Signal handling (SIGINT, SIGTERM)
-    - Active request completion
-    - Clean resource cleanup
-    - 30-second timeout
-
 - **Memory Leak Protection**
-    - Scanner cache cleanup
-    - Automatic garbage collection
-    - Resource monitoring
 
-## 🏗️ Architecture
-```
-conduit-go/
-├── cmd/api/              # Application entry point
-├── internal/
-│   ├── config/           # Configuration management
-│   ├── controllers/      # HTTP controllers
-│   ├── middleware/       # HTTP middleware
-│   ├── models/           # Domain models
-│   └── router/           # HTTP router
-├── pkg/
-│   ├── container/        # DI container
-│   ├── database/         # Query builder & ORM
-│   └── validation/       # Request validation
-├── scripts/db/           # Database scripts
-└── tests/                # Test files
-```
+### 🔐 Phase 2: Authentication & Authorization (✅ COMPLETED)
+
+- **JWT Authentication**
+    - Access & refresh tokens
+    - Token rotation
+    - Secure token storage
+
+- **User Management**
+    - Registration with validation
+    - Login with bcrypt password hashing
+    - Profile management
+    - Password change
+
+- **Password Reset**
+    - Forgot password flow
+    - Secure reset tokens (1-hour expiry)
+    - Email notifications (ready for Phase 3)
+
+- **Role-Based Authorization**
+    - Admin, Editor, User roles
+    - Protected routes
+    - Policy-based access control
 
 ## 🚀 Quick Start
 
@@ -67,134 +49,173 @@ conduit-go/
 
 ### Installation
 ```bash
-# Clone the repository
+# Clone repository
 git clone https://github.com/yourusername/conduit-go.git
 cd conduit-go
 
-# Copy environment file
+# Environment setup
 cp .env.example .env
+nano .env  # Edit with your credentials
 
-# Edit .env with your database credentials
-nano .env
-
-# Install dependencies
-go mod download
-
-# Start Docker services (MySQL, Redis, etc.)
+# Start Docker services
 docker-compose up -d
+sleep 10  # Wait for MySQL
 
-# Wait for MySQL to be ready
-sleep 10
-
-# Run the application
+# Run application
 make run
-# or
-go run cmd/api/main.go
 ```
 
-The application will start on `http://localhost:8000`
+Server runs on: `http://localhost:8000`
 
-### Using Docker Only
-```bash
-# Start all services including the Go app
-docker-compose up -d
+## 📖 API Documentation
 
-# View logs
-docker-compose logs -f
+### Authentication Endpoints
 
-# Stop services
-docker-compose down
-```
+#### Register
+```http
+POST /api/auth/register
+Content-Type: application/json
 
-## 📖 Usage Examples
-
-### Basic Routing
-```go
-r := router.New()
-
-// Simple GET route
-r.GET("/", func(w http.ResponseWriter, r *conduitReq.Request) {
-    response.Success(w, 200, "Hello World!", nil)
-})
-
-// Route with parameter
-r.GET("/users/{id}", func(w http.ResponseWriter, r *conduitReq.Request) {
-    id := r.RouteParam("id")
-    // ...
-})
-
-// Route groups
-api := r.Group("/api")
-api.GET("/users", UserListHandler)
-api.POST("/users", UserCreateHandler)
-```
-
-### Query Builder
-```go
-// Select
-var users []User
-db.Table("users").
-    Where("status", "=", "active").
-    OrderBy("created_at", "DESC").
-    Limit(10).
-    Get(&users)
-
-// Insert
-result, err := db.ExecInsert(map[string]interface{}{
-    "name": "John Doe",
-    "email": "john@example.com",
-})
-lastID, _ := result.LastInsertId()
-
-// Update
-db.Table("users").
-    Where("id", "=", 1).
-    ExecUpdate(map[string]interface{}{
-        "name": "Jane Doe",
-    })
-
-// Delete
-db.Table("users").
-    Where("id", "=", 1).
-    ExecDelete()
-
-// Transactions
-tx, _ := database.BeginTransaction(db, grammar)
-tx.NewBuilder().Table("users").ExecInsert(...)
-tx.NewBuilder().Table("posts").ExecInsert(...)
-tx.Commit() // or tx.Rollback()
-```
-
-### Validation
-```go
-schema := validation.Make().Shape(map[string]validation.Type{
-    "name":  types.String().Required().Min(3).Max(255),
-    "email": types.String().Required().Email(),
-    "age":   types.Number().Min(18).Integer(),
-})
-
-result := schema.Validate(data)
-if result.HasErrors() {
-    // Handle validation errors
-    response.Error(w, 422, result.Errors())
-    return
+{
+  "name": "John Doe",
+  "email": "john@example.com",
+  "password": "Secret123!",
+  "password_confirm": "Secret123!"
 }
-
-validData := result.ValidData()
 ```
 
-### Middleware
-```go
-// Global middleware
-r.Use(middleware.PanicRecovery(logger))
-r.Use(middleware.Logging)
-r.Use(middleware.CORSMiddleware("*"))
-r.Use(middleware.CSRFProtection())
-r.Use(middleware.RateLimit(100, 60)) // 100 req/min
+Response:
+```json
+{
+  "success": true,
+  "data": {
+    "user": {
+      "id": 123,
+      "name": "John Doe",
+      "email": "john@example.com"
+    },
+    "access_token": "eyJhbGc...",
+    "refresh_token": "eyJhbGc...",
+    "token_type": "Bearer",
+    "expires_in": 3600
+  }
+}
+```
 
-// Route-specific middleware
-apiGroup := r.Group("/api")
-apiGroup.Use(middleware.RateLimit(50, 60)) // Stricter limit for API
+#### Login
+```http
+POST /api/auth/login
+Content-Type: application/json
+
+{
+  "email": "john@example.com",
+  "password": "Secret123!"
+}
+```
+
+#### Get Profile (Protected)
+```http
+GET /api/auth/profile
+Authorization: Bearer {access_token}
+```
+
+#### Refresh Token
+```http
+POST /api/auth/refresh
+Content-Type: application/json
+
+{
+  "refresh_token": "eyJhbGc..."
+}
+```
+
+#### Forgot Password
+```http
+POST /api/auth/forgot-password
+Content-Type: application/json
+
+{
+  "email": "john@example.com"
+}
+```
+
+#### Reset Password
+```http
+POST /api/auth/reset-password
+Content-Type: application/json
+
+{
+  "token": "abc123...",
+  "email": "john@example.com",
+  "password": "NewSecret123!",
+  "password_confirm": "NewSecret123!"
+}
+```
+
+### Protected Routes
+
+All `/api/v1/*` routes require authentication:
+```http
+GET /api/v1/check
+Authorization: Bearer {access_token}
+```
+
+### Admin Routes
+
+Admin-only routes require admin role:
+```http
+GET /api/admin/users
+Authorization: Bearer {admin_access_token}
+```
+
+## 💻 Usage Examples
+
+### Frontend Integration (React/Vue/Angular)
+```javascript
+// Register
+const registerResponse = await fetch('http://localhost:8000/api/auth/register', {
+  method: 'POST',
+  headers: {
+    'Content-Type': 'application/json',
+  },
+  body: JSON.stringify({
+    name: 'John Doe',
+    email: 'john@example.com',
+    password: 'Secret123!',
+    password_confirm: 'Secret123!',
+  }),
+});
+
+const { data } = await registerResponse.json();
+localStorage.setItem('access_token', data.access_token);
+localStorage.setItem('refresh_token', data.refresh_token);
+
+// Protected API call
+const profileResponse = await fetch('http://localhost:8000/api/auth/profile', {
+  headers: {
+    'Authorization': `Bearer ${localStorage.getItem('access_token')}`,
+  },
+});
+
+// Handle token expiration
+if (profileResponse.status === 401) {
+  // Refresh token
+  const refreshResponse = await fetch('http://localhost:8000/api/auth/refresh', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      refresh_token: localStorage.getItem('refresh_token'),
+    }),
+  });
+  
+  const { data } = await refreshResponse.json();
+  localStorage.setItem('access_token', data.access_token);
+  localStorage.setItem('refresh_token', data.refresh_token);
+  
+  // Retry original request
+}
 ```
 
 ## 🧪 Testing
@@ -202,85 +223,47 @@ apiGroup.Use(middleware.RateLimit(50, 60)) // Stricter limit for API
 # Run all tests
 make test
 
+# Run auth tests only
+go test -v ./tests -run Auth
+
 # Run with coverage
 make test-coverage
 
-# Run security tests
-go test -v ./tests -run Security
-
-# Run integration tests (requires database)
-go test -v ./tests -run Integration
+# Security audit
+make security
 ```
 
-## 🔐 Security
+## 🔐 Security Best Practices
 
-### SQL Injection Prevention
-```go
-// ✅ SAFE: Uses prepared statements
-db.Table("users").Where("email", "=", userInput).Get(&users)
+### Password Requirements
 
-// ✅ SAFE: Direction is whitelist-validated
-db.Table("users").OrderBy("name", userInput).Get(&users)
+- Minimum 8 characters
+- At least 1 uppercase letter
+- At least 1 lowercase letter
+- At least 1 number
+- At least 1 special character
 
-// ❌ UNSAFE: Never do this
-db.Query("SELECT * FROM users WHERE email = '" + userInput + "'")
-```
+### Token Management
 
-### CSRF Protection
-```html
-<!-- Include CSRF token in forms -->
-<form method="POST" action="/api/users">
-    <input type="hidden" name="_token" value="{{.csrfToken}}">
-    <!-- form fields -->
-</form>
-
-<!-- Or in JavaScript -->
-<script>
-const token = document.cookie.match(/csrf_token=([^;]+)/)[1];
-fetch('/api/users', {
-    method: 'POST',
-    headers: {
-        'X-CSRF-Token': token,
-        'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({...}),
-});
-</script>
-```
+- Access tokens expire in 1 hour
+- Refresh tokens expire in 7 days
+- Tokens use HS256 algorithm
+- Secret keys must be stored in environment variables
 
 ### Rate Limiting
 
-The framework automatically handles rate limiting. Configure limits in `.env`:
-```bash
-RATE_LIMIT_MAX_REQUESTS=100
-RATE_LIMIT_WINDOW_SECONDS=60
-```
+- Public auth endpoints: 10 requests/minute
+- Protected API endpoints: 50 requests/minute
+- Admin endpoints: 30 requests/minute
 
-## 📊 Monitoring
+## 📦 Postman Collection
 
-### Health Check
-```bash
-curl http://localhost:8000/health
-```
+Import `postman/Conduit-Go-API.postman_collection.json` to test all endpoints.
 
-Response:
-```json
-{
-    "success": true,
-    "data": {
-        "status": "healthy",
-        "version": "1.0.0",
-        "database": "connected"
-    }
-}
-```
-
-### Metrics (Future Phase)
-
-- Request rate
-- Response times
-- Error rates
-- Database query performance
+Variables:
+- `base_url`: http://localhost:8000
+- `access_token`: Auto-populated after login
+- `refresh_token`: Auto-populated after login
 
 ## 🛠️ Development
 ```bash
@@ -290,40 +273,27 @@ make fmt
 # Run linter
 make lint
 
-# Security check
-make security
-
 # Build binary
 make build
 
-# Clean build artifacts
-make clean
+# Run with hot reload
+make run
 ```
 
 ## 🚦 Roadmap
 
 - [x] **Phase 1: Security & Stability**
-    - SQL injection protection
-    - CSRF protection
-    - Rate limiting
-    - Graceful shutdown
-    - Memory leak fixes
-
-- [ ] **Phase 2: Authentication & Authorization** (Next)
-    - JWT authentication
-    - Session-based auth
-    - Role-based access control (RBAC)
-    - Policy-based authorization
-
-- [ ] **Phase 3: Advanced Features**
-    - Queue system
+- [x] **Phase 2: Authentication & Authorization**
+- [ ] **Phase 3: Advanced Features** (Next)
+    - Queue system (Redis)
     - Event system
     - Cache facade
     - Mail system
     - File storage
+    - Email verification
 
 - [ ] **Phase 4: Developer Experience**
-    - CLI tool (Cobra-based)
+    - CLI tool
     - Code generators
     - Migration system
     - Testing helpers
@@ -334,13 +304,32 @@ make clean
     - Load balancing
     - Docker orchestration
 
+## 📝 Environment Variables
+```bash
+# Application
+APP_NAME=Conduit-Go
+APP_ENV=development
+PORT=8000
+
+# Database
+DB_DSN=user:pass@tcp(localhost:3306)/conduit_go?parseTime=true
+
+# JWT
+JWT_SECRET=your-super-secret-key
+JWT_EXPIRATION=3600
+
+# Rate Limiting
+RATE_LIMIT_MAX_REQUESTS=100
+RATE_LIMIT_WINDOW_SECONDS=60
+```
+
 ## 🤝 Contributing
 
-Contributions are welcome! Please feel free to submit a Pull Request.
+Contributions welcome! Please read [CONTRIBUTING.md](CONTRIBUTING.md) first.
 
-## 📝 License
+## 📄 License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+MIT License - see [LICENSE](LICENSE) file.
 
 ## 👨‍💻 Author
 
@@ -349,7 +338,6 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 - GitHub: [@biyonik](https://github.com/biyonik)
 - LinkedIn: [linkedin.com/in/biyonik](https://linkedin.com/in/biyonik)
 
-## 🙏 Acknowledgments
+---
 
-- Inspired by [Laravel](https://laravel.com/) and [Symfony](https://symfony.com/)
-- Built with ❤️ and ☕
+Built with ❤️ and ☕ in Turkey

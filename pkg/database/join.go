@@ -8,12 +8,12 @@ package database
 // üretimi eklenecektir.
 // -----------------------------------------------------------------------------
 
-// JoinClause, ileride JOIN'lerin tutulacağı yapıdır.
-type JoinClause struct {
-	Type  string // INNER, LEFT, RIGHT, CROSS
-	Table string
-	On    string // basit on ifadesi (ör: `users.id = posts.user_id`)
-}
+//// JoinClause, ileride JOIN'lerin tutulacağı yapıdır.
+//type JoinClause struct {
+//	Type  string // INNER, LEFT, RIGHT, CROSS
+//	Table string
+//	On    string // basit on ifadesi (ör: `users.id = posts.user_id`)
+//}
 
 // Not: Bu sürümde join'ler QueryBuilder.orders içine dahil edilmemiştir.
 // Geliştirme aşamasında join desteği eklenecektir.

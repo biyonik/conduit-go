@@ -1,23 +1,47 @@
 package database
 
 // -----------------------------------------------------------------------------
-// WHERE OPERATIONS
+// WHERE OPERATIONS (GÜVENLİK İYİLEŞTİRMELERİ İLE)
 // -----------------------------------------------------------------------------
 // Bu dosya, QueryBuilder için WHERE ile ilgili yardımcı metotları içerir.
 // Daha karmaşık where tipleri (IN, BETWEEN, NULL vs.) burada genişletilebilir.
+//
+// GÜVENLİK NOTU:
+// WhereClause yapısı artık types.go dosyasında tanımlı.
+// Tüm değerler prepared statement ile bağlandığı için SQL injection korumalıdır.
 // -----------------------------------------------------------------------------
 
-// WhereClause — WHERE koşulunu temsil eden yapı.
-// Column: kolon adı
-// Operator: =, <, >, LIKE, vb.
-// Value: placeholder değeri
-// Boolean: AND / OR
-type WhereClause struct {
-	Column   string
-	Operator string
-	Value    interface{}
-	Boolean  string
-}
+// NOT: WhereClause artık types.go dosyasında tanımlı.
+// Bu dosya gelecekte gelişmiş WHERE metodları için ayrılmıştır.
 
-// Where ekleme fonksiyonu builder.go içinde implement edilmiştir. Burada
-// daha karmaşık where tipleri eklenebilir (WhereIn, WhereBetween, vb.).
+// Gelecekte eklenecek metodlar:
+// - WhereIn(column string, values []interface{})
+// - WhereNotIn(column string, values []interface{})
+// - WhereBetween(column string, min, max interface{})
+// - WhereNull(column string)
+// - WhereNotNull(column string)
+// - WhereRaw(sql string, bindings ...interface{}) // Dikkatli kullanılmalı!
+
+// WhereIn örnek implementasyonu (gelecek için):
+//
+// func (qb *QueryBuilder) WhereIn(column string, values []interface{}) *QueryBuilder {
+//     qb.wheres = append(qb.wheres, WhereClause{
+//         Column:   column,
+//         Operator: "IN",
+//         Value:    values, // Grammar katmanında (?, ?, ?) şeklinde expand edilecek
+//         Boolean:  "AND",
+//     })
+//     return qb
+// }
+
+// WhereNull örnek implementasyonu (gelecek için):
+//
+// func (qb *QueryBuilder) WhereNull(column string) *QueryBuilder {
+//     qb.wheres = append(qb.wheres, WhereClause{
+//         Column:   column,
+//         Operator: "IS",
+//         Value:    nil, // Grammar katmanında "IS NULL" olarak compile edilecek
+//         Boolean:  "AND",
+//     })
+//     return qb
+// }

@@ -1,8 +1,7 @@
-// internal/controllers/app_controller.go
 package controllers
 
 import (
-	"database/sql" // <-- EKLENDİ
+	"database/sql"
 	"fmt"
 	"log"
 	"net/http"
@@ -16,40 +15,35 @@ import (
 	"github.com/biyonik/conduit-go/pkg/database"
 )
 
-// AppController, artık DB ve Grammar'ı tutuyor.
+// AppController, temel uygulama endpoint'lerini yönetir.
 type AppController struct {
 	Logger  *log.Logger
-	DB      *sql.DB // <-- EKLENDİ (QueryExecutor olarak)
+	DB      *sql.DB
 	Grammar database.Grammar
 	AppName string
 }
 
-// NewDB: *sql.DB'yi ve Grammar'ı kullanarak
-// yeni bir QueryBuilder başlatan bir helper fonksiyon.
+// NewDB, yeni bir QueryBuilder başlatır.
 func (ac *AppController) NewDB() *database.QueryBuilder {
-	// 'DB' (QueryExecutor) ve 'Grammar'ı kullanarak builder'ı oluşturur
 	return database.NewBuilder(ac.DB, ac.Grammar)
 }
 
-// NewAppController, DI Konteyneri için fabrika fonksiyonu.
+// NewAppController, DI Container için fabrika fonksiyonu.
 func NewAppController(c *container.Container) (*AppController, error) {
 	logger := c.MustGet(reflect.TypeOf((*log.Logger)(nil))).(*log.Logger)
 	grammarType := reflect.TypeOf((*database.Grammar)(nil)).Elem()
 	grammar := c.MustGet(grammarType).(database.Grammar)
-
-	// --- YENİ EKLENEN ---
-	// *sql.DB havuzunu (pool) konteynerden çöz
 	db := c.MustGet(reflect.TypeOf((*sql.DB)(nil))).(*sql.DB)
-	// --- YENİ EKLENEN SONU ---
 
 	return &AppController{
 		Logger:  logger,
-		DB:      db, // <-- EKLENDİ
+		DB:      db,
 		Grammar: grammar,
-		AppName: "Conduit Go (DI)",
+		AppName: "Conduit Go",
 	}, nil
 }
 
+// HomeHandler, ana sayfa handler'ı.
 func (ac *AppController) HomeHandler(w http.ResponseWriter, r *conduitReq.Request) {
 	if r.IsJSON() {
 		conduitRes.Success(w, 200, "JSON istediniz, JSON geldi!", nil)
@@ -58,7 +52,45 @@ func (ac *AppController) HomeHandler(w http.ResponseWriter, r *conduitReq.Reques
 	fmt.Fprintf(w, "Merhaba! Burası %s, Adres: %s", ac.AppName, r.URL.Path)
 }
 
-// CheckHandler, 'main.go'dan taşındı.
+// HealthHandler, sistem sağlık kontrolü endpoint'i.
+//
+// Bu endpoint kubernetes liveness/readiness probe'ları için kullanılır.
+// Database bağlantısını kontrol eder ve sistem durumunu döndürür.
+//
+// Response Format:
+//
+//	{
+//	  "success": true,
+//	  "data": {
+//	    "status": "healthy",
+//	    "version": "1.0.0",
+//	    "uptime": "5m30s",
+//	    "database": "connected"
+//	  }
+//	}
+//
+// Status Codes:
+// - 200: Sistem sağlıklı
+// - 503: Database bağlantısı yok (service unavailable)
+func (ac *AppController) HealthHandler(w http.ResponseWriter, r *conduitReq.Request) {
+	// Database bağlantısını kontrol et
+	if err := ac.DB.Ping(); err != nil {
+		ac.Logger.Printf("Health check FAILED: Database ping error: %v", err)
+		conduitRes.Error(w, http.StatusServiceUnavailable, "Database bağlantısı kurulamadı")
+		return
+	}
+
+	// Sistem bilgilerini topla
+	healthData := map[string]string{
+		"status":   "healthy",
+		"version":  "1.0.0",
+		"database": "connected",
+	}
+
+	conduitRes.Success(w, 200, healthData, nil)
+}
+
+// CheckHandler, Bearer token kontrolü yapar.
 func (ac *AppController) CheckHandler(w http.ResponseWriter, r *conduitReq.Request) {
 	token := r.BearerToken()
 	if token == "" {
@@ -73,30 +105,25 @@ func (ac *AppController) CheckHandler(w http.ResponseWriter, r *conduitReq.Reque
 	)
 }
 
-// TestQueryHandler, ARTIK GERÇEK BİR SORGULAMA YAPABİLİR.
-// (Şimdilik .ToSQL() ile devam ediyoruz, .Get() metodunu ekleyince burayı tekrar güncelleyeceğiz)
+// TestQueryHandler, ORM .Get() metodunu test eder.
 func (ac *AppController) TestQueryHandler(w http.ResponseWriter, r *conduitReq.Request) {
 	ac.Logger.Println("Query Builder (ORM .Get()) testi başladı...")
 
-	// Test için geçici bir 'User' struct'ı tanımlayalım
-	// (Normalde bu 'internal/models/user.go'da olurdu)
+	// Test için geçici User struct'ı
 	type User struct {
-		models.BaseModel        // Gömülü struct
-		Name             string `json:"name" db:"name"`
-		Email            string `json:"email" db:"email"`
-		// Not: 'status' alanı struct'ta yok, 'db' tag'i yoksa
-		// scanner.go'daki mantık onu atlayacak.
+		models.BaseModel
+		Name  string `json:"name" db:"name"`
+		Email string `json:"email" db:"email"`
 	}
 
-	// Sonuçları dolduracağımız slice'ı hazırla
 	var users []User
 
-	// Yeni ORM metodunu çağır!
+	// ORM sorgusu
 	err := ac.NewDB().
 		Table("users").
-		Select("id", "name", "email", "created_at", "updated_at"). // 'db' tag'leri ile eşleşmeli
+		Select("id", "name", "email", "created_at", "updated_at").
 		Where("status", "=", "active").
-		Get(&users) // Adresini (&) yolla
+		Get(&users)
 
 	if err != nil {
 		ac.Logger.Printf("Sorgu hatası: %v", err)

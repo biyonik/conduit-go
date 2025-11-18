@@ -39,6 +39,103 @@ Modern, Laravel-inspired web framework for Go. Built with security, performance,
     - Protected routes
     - Policy-based access control
 
+### 🔄 Phase 3: Queue System (✅ COMPLETED)
+
+- **Redis Queue**
+    - Push/Later (immediate/delayed dispatch)
+    - Pop (blocking job fetch)
+    - Failed job handling
+    - Retry mechanism with exponential backoff
+
+- **Job System**
+    - Job interface with Handle() and Failed()
+    - Serialization/deserialization
+    - Job metadata (ID, attempts, queue name)
+    - Job registry for type mapping
+
+- **Worker**
+    - Multiple queue support
+    - Graceful shutdown
+    - Concurrent processing
+    - Failed job tracking
+
+- **Example Jobs**
+    - SendEmailJob (email queue)
+    - ProcessUploadJob (upload queue)
+
+## 📋 Queue Usage
+
+### Dispatching Jobs
+```php
+// Create a job
+emailJob := jobs.NewSendEmailJob(
+    "user@example.com",
+    "Welcome to Conduit-Go",
+    "Hello! Welcome to our platform.",
+)
+
+// Push to queue (immediate)
+queue.Push(emailJob, "emails")
+
+// Push to queue (delayed)
+queue.Later(5*time.Minute, emailJob, "emails")
+```
+
+### Running Workers
+```bash
+# Start worker for default queue
+make worker
+
+# Start worker for specific queues
+make worker-emails
+
+# Start worker for all queues
+make worker-all
+
+# Or directly
+go run cmd/worker/main.go emails notifications
+```
+
+### Creating Custom Jobs
+```go
+package jobs
+
+import (
+    "encoding/json"
+    "github.com/biyonik/conduit-go/pkg/queue"
+)
+
+type MyCustomJob struct {
+    queue.BaseJob
+    Data string `json:"data"`
+}
+
+func (j *MyCustomJob) Handle() error {
+    // Your job logic here
+    return nil
+}
+
+func (j *MyCustomJob) Failed(err error) error {
+    // Failed job handling
+    return nil
+}
+
+func (j *MyCustomJob) GetPayload() ([]byte, error) {
+    return json.Marshal(j)
+}
+
+func (j *MyCustomJob) SetPayload(data []byte) error {
+    return json.Unmarshal(data, j)
+}
+
+// Register the job type
+func init() {
+    queue.RegisterJob("*jobs.MyCustomJob", func() queue.Job {
+        return &MyCustomJob{}
+    })
+}
+```
+
 ## 🚀 Quick Start
 
 ### Prerequisites

@@ -123,6 +123,7 @@ go.work
 !CONTRIBUTING.md
 !SECURITY.md
 !docker-compose.yml
+!.env.example
 
 !postman/*
 

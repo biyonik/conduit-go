@@ -89,6 +89,13 @@ type Config struct {
 		Port        int    // SMTP port
 		FromAddress string // Gönderici email adresi
 	}
+
+	Queue struct {
+		Driver      string // Queue driver: redis, database, sync
+		Default     string // Default queue name
+		RetryAfter  int    // Retry after seconds
+		MaxAttempts int    // Maximum attempts
+	} `json:"queue"`
 }
 
 // Load, ortam değişkenlerini okuyarak Config nesnesini döndürür.
@@ -195,6 +202,11 @@ func Load() *Config {
 	cfg.Mail.Host = getEnv("MAIL_HOST", "localhost")
 	cfg.Mail.Port = getEnvAsInt("MAIL_PORT", 1025)
 	cfg.Mail.FromAddress = getEnv("MAIL_FROM_ADDRESS", "noreply@conduit-go.local")
+
+	cfg.Queue.Driver = getEnv("QUEUE_DRIVER", "redis") // redis, database, sync
+	cfg.Queue.Default = getEnv("QUEUE_DEFAULT", "default")
+	cfg.Queue.RetryAfter = getEnvAsInt("QUEUE_RETRY_AFTER", 90)
+	cfg.Queue.MaxAttempts = getEnvAsInt("QUEUE_MAX_ATTEMPTS", 3)
 
 	// Validation
 	if err := cfg.Validate(); err != nil {

@@ -16,11 +16,13 @@ import (
 
 	"github.com/biyonik/conduit-go/internal/config"
 	"github.com/biyonik/conduit-go/internal/controllers"
+	"github.com/biyonik/conduit-go/internal/jobs"
 	"github.com/biyonik/conduit-go/internal/middleware"
 	"github.com/biyonik/conduit-go/internal/router"
 	"github.com/biyonik/conduit-go/pkg/cache"
 	"github.com/biyonik/conduit-go/pkg/container"
 	"github.com/biyonik/conduit-go/pkg/database"
+	"github.com/biyonik/conduit-go/pkg/queue"
 )
 
 // -----------------------------------------------------------------------------
@@ -148,6 +150,35 @@ func main() {
 		}
 	})
 
+	c.Register(func(c *container.Container) (queue.Queue, error) {
+		cfg := c.MustGet(reflect.TypeOf((*config.Config)(nil))).(*config.Config)
+		logger := c.MustGet(reflect.TypeOf((*log.Logger)(nil))).(*log.Logger)
+
+		switch cfg.Queue.Driver {
+		case "redis":
+			logger.Println("🔄 Redis queue başlatılıyor...")
+
+			// Redis client'ı al
+			redisClient, err := c.Get(reflect.TypeOf((*database.RedisClient)(nil)))
+			if err != nil {
+				logger.Printf("⚠️  Redis bağlantısı yok, sync queue'e geçiliyor")
+				// Fallback to sync queue
+				return queue.NewSyncQueue(logger), nil
+			}
+
+			rc := redisClient.(*database.RedisClient)
+			logger.Printf("✅ Redis queue başlatıldı (prefix: %s)", cfg.Cache.Prefix)
+			return queue.NewRedisQueue(rc.Client(), logger, cfg.Cache.Prefix), nil
+
+		case "sync":
+			logger.Println("✅ Sync queue başlatıldı (immediate execution)")
+			return queue.NewSyncQueue(logger), nil
+
+		default:
+			return nil, fmt.Errorf("geçersiz queue driver: %s", cfg.Queue.Driver)
+		}
+	})
+
 	// Controller'lar
 	c.Register(controllers.NewAppController)
 	c.Register(controllers.NewAuthController)
@@ -159,6 +190,19 @@ func main() {
 	logger := c.MustGet(reflect.TypeOf((*log.Logger)(nil))).(*log.Logger)
 	cfg := c.MustGet(reflect.TypeOf((*config.Config)(nil))).(*config.Config)
 	cacheDriver := c.MustGet(reflect.TypeOf((*cache.Cache)(nil)).Elem()).(cache.Cache)
+
+	logger.Println("📋 Registering job types...")
+
+	// Job type'larını register et
+	queue.RegisterJob("*jobs.SendEmailJob", func() queue.Job {
+		return &jobs.SendEmailJob{}
+	})
+	queue.RegisterJob("*jobs.ProcessUploadJob", func() queue.Job {
+		return &jobs.ProcessUploadJob{}
+	})
+
+	logger.Println("✅ Job types registered")
+
 	appController := c.MustGet(reflect.TypeOf((*controllers.AppController)(nil))).(*controllers.AppController)
 	authController := c.MustGet(reflect.TypeOf((*controllers.AuthController)(nil))).(*controllers.AuthController)
 	passwordController := c.MustGet(reflect.TypeOf((*controllers.PasswordController)(nil))).(*controllers.PasswordController)

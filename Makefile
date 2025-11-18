@@ -110,3 +110,26 @@ security:
 		echo "⚠️  gosec yüklü değil. Yüklemek için:"; \
 		echo "  go install github.com/securego/gosec/v2/cmd/gosec@latest"; \
 	fi
+
+# Queue Worker Commands
+.PHONY: worker worker-all worker-emails
+
+# Start queue worker for default queue
+worker:
+	@echo "Starting queue worker (default queue)..."
+	@go run cmd/worker/main.go
+
+# Start queue worker for all queues
+worker-all:
+	@echo "Starting queue worker (all queues)..."
+	@go run cmd/worker/main.go default emails notifications uploads
+
+# Start queue worker for emails queue only
+worker-emails:
+	@echo "Starting queue worker (emails queue)..."
+	@go run cmd/worker/main.go emails
+
+# Test queue system
+test-queue:
+	@echo "Running queue tests..."
+	@go test -v ./tests -run Queue

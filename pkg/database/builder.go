@@ -327,7 +327,10 @@ func (qb *QueryBuilder) Offset(offset int) *QueryBuilder {
 // Güvenlik Notu:
 // Tüm parametreler prepared statement ile bağlandığı için SQL injection korumalıdır.
 func (qb *QueryBuilder) Get(dest any) error {
-	sqlStr, args := qb.ToSQL()
+	sqlStr, args, err := qb.ToSQL()
+	if err != nil {
+		return fmt.Errorf("query compilation failed: %w", err)
+	}
 
 	rows, err := qb.executor.Query(sqlStr, args...)
 	if err != nil {
@@ -362,7 +365,10 @@ func (qb *QueryBuilder) Get(dest any) error {
 func (qb *QueryBuilder) First(dest any) error {
 	qb.Limit(1)
 
-	sqlStr, args := qb.ToSQL()
+	sqlStr, args, err := qb.ToSQL()
+	if err != nil {
+		return fmt.Errorf("query compilation failed: %w", err)
+	}
 
 	rows, err := qb.executor.Query(sqlStr, args...)
 	if err != nil {
@@ -394,7 +400,7 @@ func (qb *QueryBuilder) First(dest any) error {
 //	sql, args := qb.ToSQL()
 //	// sql: "SELECT `id`, `name` FROM `users` WHERE `status` = ? ORDER BY `created_at` DESC LIMIT 10"
 //	// args: ["active"]
-func (qb *QueryBuilder) ToSQL() (string, []interface{}) {
+func (qb *QueryBuilder) ToSQL() (string, []interface{}, error) {
 	return qb.grammar.CompileSelect(qb)
 }
 
@@ -419,7 +425,10 @@ func (qb *QueryBuilder) ExecInsert(data map[string]interface{}) (sql.Result, err
 		validateIdentifier(column, "column")
 	}
 
-	sqlStr, args := qb.grammar.CompileInsert(qb.table, data)
+	sqlStr, args, err := qb.grammar.CompileInsert(qb.table, data)
+	if err != nil {
+		return nil, fmt.Errorf("insert compilation failed: %w", err)
+	}
 	return qb.executor.Exec(sqlStr, args...)
 }
 
@@ -449,7 +458,10 @@ func (qb *QueryBuilder) ExecUpdate(data map[string]interface{}) (sql.Result, err
 		validateIdentifier(column, "column")
 	}
 
-	sqlStr, args := qb.grammar.CompileUpdate(qb.table, data, qb.wheres)
+	sqlStr, args, err := qb.grammar.CompileUpdate(qb.table, data, qb.wheres)
+	if err != nil {
+		return nil, fmt.Errorf("update compilation failed: %w", err)
+	}
 	return qb.executor.Exec(sqlStr, args...)
 }
 
@@ -470,6 +482,9 @@ func (qb *QueryBuilder) ExecUpdate(data map[string]interface{}) (sql.Result, err
 // WHERE clause olmadan DELETE çalıştırmak TÜM TABLONUN SİLİNMESİNE sebep olur!
 // Production'da mutlaka WHERE kontrolü eklenmelidir.
 func (qb *QueryBuilder) ExecDelete() (sql.Result, error) {
-	sqlStr, args := qb.grammar.CompileDelete(qb.table, qb.wheres)
+	sqlStr, args, err := qb.grammar.CompileDelete(qb.table, qb.wheres)
+	if err != nil {
+		return nil, fmt.Errorf("delete compilation failed: %w", err)
+	}
 	return qb.executor.Exec(sqlStr, args...)
 }

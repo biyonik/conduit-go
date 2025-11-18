@@ -1,0 +1,13 @@
+linters:
+  enable:
+    - gofmt
+    - goimports
+    - govet
+    - errcheck
+    - staticcheck
+    - gosec
+    - revive
+    - godot
+    - exhaustive
+
+version: 2

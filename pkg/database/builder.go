@@ -2,7 +2,8 @@ package database
 
 import (
 	"database/sql"
-	_ "fmt"
+	"fmt"
+	"regexp"
 	"strings"
 )
 
@@ -20,18 +21,22 @@ import (
 // - Tüm kullanıcı input'ları prepared statement'lar ile bağlanıyor
 // -----------------------------------------------------------------------------
 
+// validIdentifierRegex, güvenli SQL identifier pattern'ini tanımlar.
+// Sadece alphanumeric, underscore ve nokta (table.column için) kabul eder.
+var validIdentifierRegex = regexp.MustCompile(`^[a-zA-Z0-9_\.]+$`)
+
 type QueryBuilder struct {
 	executor QueryExecutor
 	grammar  Grammar
 	table    string
 	columns  []string
 	wheres   []WhereClause
-	orders   []OrderClause // string yerine OrderClause kullanıyoruz (GÜVENLİK)
+	orders   []OrderClause
 	limit    int
 	offset   int
 }
 
-// NewBuilder, veritabanı bağlantısını alarak yeni QueryBuilder üretir.
+// NewBuilder NewBuilder, veritabanı bağlantısını alarak yeni QueryBuilder üretir.
 //
 // Parametreler:
 //   - executor: SQL komutlarını çalıştıracak executor (*sql.DB veya *sql.Tx)
@@ -49,6 +54,65 @@ func NewBuilder(executor QueryExecutor, grammar Grammar) *QueryBuilder {
 	}
 }
 
+// validateIdentifier, SQL identifier'ı (column/table adı) validate eder.
+//
+// GÜVENLİK KRİTİK:
+// Bu fonksiyon SQL injection saldırılarını önler. Sadece güvenli
+// karakterler içeren identifier'lara izin verir.
+//
+// Parametre:
+//   - identifier: Validate edilecek SQL identifier
+//   - context: Hata mesajı için bağlam (örn: "column", "table")
+//
+// Panic:
+// Geçersiz identifier bulunursa panic atar
+//
+// İzin verilen karakterler:
+// - Harfler (a-z, A-Z)
+// - Rakamlar (0-9)
+// - Underscore (_)
+// - Nokta (.) - sadece table.column formatı için
+//
+// Örnekler:
+//   - ✅ "users" → geçerli
+//   - ✅ "user_id" → geçerli
+//   - ✅ "users.id" → geçerli
+//   - ❌ "id; DROP TABLE users--" → panic
+//   - ❌ "id' OR '1'='1" → panic
+func validateIdentifier(identifier string, context string) {
+	// Wildcard için özel durum
+	if identifier == "*" {
+		return
+	}
+
+	// Boş string kontrolü
+	if strings.TrimSpace(identifier) == "" {
+		panic(fmt.Sprintf("Invalid %s name: empty identifier", context))
+	}
+
+	// Regex ile validate et
+	if !validIdentifierRegex.MatchString(identifier) {
+		panic(fmt.Sprintf("Invalid %s name: '%s' (contains unsafe characters)", context, identifier))
+	}
+
+	// Nokta varsa, her parçayı ayrı ayrı kontrol et
+	if strings.Contains(identifier, ".") {
+		parts := strings.Split(identifier, ".")
+
+		// En fazla 2 parça olmalı (table.column)
+		if len(parts) > 2 {
+			panic(fmt.Sprintf("Invalid %s name: '%s' (too many dots)", context, identifier))
+		}
+
+		// Her parçanın boş olmaması gerekir
+		for _, part := range parts {
+			if strings.TrimSpace(part) == "" {
+				panic(fmt.Sprintf("Invalid %s name: '%s' (empty part)", context, identifier))
+			}
+		}
+	}
+}
+
 // Table, sorgunun çalışacağı tablo adını belirler.
 //
 // Parametre:
@@ -61,6 +125,7 @@ func NewBuilder(executor QueryExecutor, grammar Grammar) *QueryBuilder {
 //
 //	qb.Table("users")
 func (qb *QueryBuilder) Table(tableName string) *QueryBuilder {
+	validateIdentifier(tableName, "table")
 	qb.table = tableName
 	return qb
 }
@@ -78,6 +143,36 @@ func (qb *QueryBuilder) Table(tableName string) *QueryBuilder {
 //	qb.Select("id", "name", "email")
 //	qb.Select("COUNT(*) as total")
 func (qb *QueryBuilder) Select(columns ...string) *QueryBuilder {
+	// Her column'u validate et
+	for _, col := range columns {
+		// SQL fonksiyonları için özel durum (COUNT(*), SUM(price), vb.)
+		// Bu durumda parantez içeriğini kontrol etmiyoruz
+		if strings.Contains(col, "(") && strings.Contains(col, ")") {
+			// SQL fonksiyonları için daha esnek validation
+			// Örn: "COUNT(*) as total", "SUM(price)", "MAX(id)"
+			// Bu tür kullanımlar genelde developer tarafından yazılır, user input değildir
+			// Yine de basic bir check yapalım
+			if strings.Contains(col, ";") || strings.Contains(col, "--") {
+				panic(fmt.Sprintf("Invalid column expression: '%s' (suspicious content)", col))
+			}
+			continue
+		}
+
+		// AS alias kontrolü (örn: "COUNT(*) as total")
+		if strings.Contains(strings.ToLower(col), " as ") {
+			parts := strings.Split(col, " as ")
+			if len(parts) == 2 {
+				// Alias'ı validate et
+				alias := strings.TrimSpace(parts[1])
+				validateIdentifier(alias, "column alias")
+				continue
+			}
+		}
+
+		// Normal column ise validate et
+		validateIdentifier(col, "column")
+	}
+
 	qb.columns = columns
 	return qb
 }
@@ -102,6 +197,8 @@ func (qb *QueryBuilder) Select(columns ...string) *QueryBuilder {
 // Güvenlik Notu:
 // Operator whitelist kontrolü Grammar katmanında yapılır.
 func (qb *QueryBuilder) Where(column string, operator string, value interface{}) *QueryBuilder {
+	validateIdentifier(column, "column")
+
 	qb.wheres = append(qb.wheres, WhereClause{
 		Column:   column,
 		Operator: operator,
@@ -126,6 +223,8 @@ func (qb *QueryBuilder) Where(column string, operator string, value interface{})
 //	qb.Where("role", "=", "admin").OrWhere("role", "=", "moderator")
 //	→ SQL: WHERE `role` = ? OR `role` = ?
 func (qb *QueryBuilder) OrWhere(column string, operator string, value interface{}) *QueryBuilder {
+	validateIdentifier(column, "column")
+
 	qb.wheres = append(qb.wheres, WhereClause{
 		Column:   column,
 		Operator: operator,
@@ -158,6 +257,8 @@ func (qb *QueryBuilder) OrWhere(column string, operator string, value interface{
 // Geçersiz direction değerleri otomatik olarak "ASC"e dönüştürülür.
 // Bu sayede SQL injection riski tamamen ortadan kalkar.
 func (qb *QueryBuilder) OrderBy(column string, direction string) *QueryBuilder {
+	validateIdentifier(column, "column")
+
 	// Direction'ı normalize et ve whitelist kontrolü yap
 	dir := strings.ToUpper(strings.TrimSpace(direction))
 
@@ -168,8 +269,6 @@ func (qb *QueryBuilder) OrderBy(column string, direction string) *QueryBuilder {
 	case "ASC":
 		orderDir = OrderAsc
 	default:
-		// Geçersiz değer için varsayılan olarak ASC kullan
-		// Bu sayede "DESC; DROP TABLE users--" gibi injection denemeleri etkisiz kalır
 		orderDir = OrderAsc
 	}
 
@@ -241,7 +340,6 @@ func (qb *QueryBuilder) Get(dest any) error {
 		}
 	}(rows)
 
-	// Reflection-based scanner kullanarak sonuçları tara
 	return ScanSlice(rows, dest)
 }
 
@@ -262,7 +360,6 @@ func (qb *QueryBuilder) Get(dest any) error {
 //	    // Kullanıcı bulunamadı
 //	}
 func (qb *QueryBuilder) First(dest any) error {
-	// First her zaman LIMIT 1 olmalıdır
 	qb.Limit(1)
 
 	sqlStr, args := qb.ToSQL()
@@ -278,13 +375,10 @@ func (qb *QueryBuilder) First(dest any) error {
 		}
 	}(rows)
 
-	// İlk satıra ilerle
 	if !rows.Next() {
-		// Satır bulunamadı
 		return sql.ErrNoRows
 	}
 
-	// Reflection-based scanner kullanarak sonucu tara
 	return ScanStruct(rows, dest)
 }
 
@@ -321,6 +415,10 @@ func (qb *QueryBuilder) ToSQL() (string, []interface{}) {
 //	})
 //	lastID, _ := result.LastInsertId()
 func (qb *QueryBuilder) ExecInsert(data map[string]interface{}) (sql.Result, error) {
+	for column := range data {
+		validateIdentifier(column, "column")
+	}
+
 	sqlStr, args := qb.grammar.CompileInsert(qb.table, data)
 	return qb.executor.Exec(sqlStr, args...)
 }
@@ -347,6 +445,10 @@ func (qb *QueryBuilder) ExecInsert(data map[string]interface{}) (sql.Result, err
 // WHERE clause olmadan UPDATE çalıştırmak tehlikelidir!
 // Production'da mutlaka WHERE kontrolü eklenmelidir.
 func (qb *QueryBuilder) ExecUpdate(data map[string]interface{}) (sql.Result, error) {
+	for column := range data {
+		validateIdentifier(column, "column")
+	}
+
 	sqlStr, args := qb.grammar.CompileUpdate(qb.table, data, qb.wheres)
 	return qb.executor.Exec(sqlStr, args...)
 }

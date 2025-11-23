@@ -17,8 +17,10 @@ package controllers
 
 import (
 	"crypto/rand"
+	"crypto/sha256"
 	"database/sql"
 	"encoding/base64"
+	"encoding/hex"
 	"log"
 	"net/http"
 	"reflect"
@@ -354,10 +356,8 @@ func (pc *PasswordController) generateResetToken() (string, error) {
 
 // hashToken, token'ı hash'ler (database'de plain text saklamayalım).
 func (pc *PasswordController) hashToken(token string) string {
-	// Basit bir hash (SHA256 kullanılabilir)
-	// Şimdilik token'ı olduğu gibi dönüyoruz
-	// TODO: crypto/sha256 kullanarak hash'le
-	return token
+	hash := sha256.Sum256([]byte(token))
+	return hex.EncodeToString(hash[:])
 }
 
 // sendSuccessResponse, standart başarı mesajı döner.

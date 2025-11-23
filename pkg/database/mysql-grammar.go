@@ -127,10 +127,14 @@ func (g *MySQLGrammar) CompileSelect(qb *QueryBuilder) (string, []interface{}, e
 				return "", nil, fmt.Errorf("where clause error: %w", err)
 			}
 
-			// Kolon adını wrap et
-			wrappedCol, err := g.Wrap(w.Column)
-			if err != nil {
-				return "", nil, fmt.Errorf("where column wrap error: %w", err)
+			// Kolon adını wrap et (SQL fonksiyonları için özel durum)
+			wrappedCol := w.Column
+			if !strings.Contains(w.Column, "(") {
+				var err error
+				wrappedCol, err = g.Wrap(w.Column)
+				if err != nil {
+					return "", nil, fmt.Errorf("where column wrap error: %w", err)
+				}
 			}
 
 			// AND/OR ekle
@@ -138,8 +142,46 @@ func (g *MySQLGrammar) CompileSelect(qb *QueryBuilder) (string, []interface{}, e
 				sql += fmt.Sprintf(" %s ", w.Boolean)
 			}
 
-			sql += fmt.Sprintf("%s %s ?", wrappedCol, strings.ToUpper(w.Operator))
-			args = append(args, w.Value)
+			operator := strings.ToUpper(w.Operator)
+
+			// Operatör tipine göre SQL oluştur
+			switch operator {
+			case "IN", "NOT IN":
+				// IN ve NOT IN için değerler dizisi
+				values, ok := w.Value.([]interface{})
+				if !ok {
+					return "", nil, fmt.Errorf("IN/NOT IN operator requires []interface{} value")
+				}
+				placeholders := make([]string, len(values))
+				for j := range values {
+					placeholders[j] = "?"
+				}
+				sql += fmt.Sprintf("%s %s (%s)", wrappedCol, operator, strings.Join(placeholders, ", "))
+				args = append(args, values...)
+
+			case "BETWEEN", "NOT BETWEEN":
+				// BETWEEN için iki değer gerekli
+				values, ok := w.Value.([]interface{})
+				if !ok || len(values) != 2 {
+					return "", nil, fmt.Errorf("BETWEEN operator requires exactly 2 values")
+				}
+				sql += fmt.Sprintf("%s %s ? AND ?", wrappedCol, operator)
+				args = append(args, values[0], values[1])
+
+			case "IS", "IS NOT":
+				// NULL kontrolü için
+				if w.Value == nil {
+					sql += fmt.Sprintf("%s %s NULL", wrappedCol, operator)
+				} else {
+					sql += fmt.Sprintf("%s %s ?", wrappedCol, operator)
+					args = append(args, w.Value)
+				}
+
+			default:
+				// Standart operatörler (=, !=, <, >, LIKE, vb.)
+				sql += fmt.Sprintf("%s %s ?", wrappedCol, operator)
+				args = append(args, w.Value)
+			}
 		}
 	}
 

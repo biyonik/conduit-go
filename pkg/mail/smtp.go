@@ -41,13 +41,22 @@ import (
 
 // SMTPConfig, SMTP bağlantı ayarlarını içerir.
 type SMTPConfig struct {
-	Host     string  // SMTP sunucu adresi (örn: smtp.gmail.com)
-	Port     int     // SMTP port (25, 587, 465)
-	Username string  // SMTP kullanıcı adı
-	Password string  // SMTP şifre
-	From     Address // Varsayılan gönderici adresi
-	UseTLS   bool    // TLS kullanılsın mı (587 port için true)
-	Timeout  time.Duration
+	Host     string        // SMTP sunucu adresi (örn: smtp.gmail.com)
+	Port     int           // SMTP port (25, 587, 465)
+	Username string        // SMTP kullanıcı adı
+	Password string        // SMTP şifre
+	From     Address       // Varsayılan gönderici adresi
+	UseTLS   bool          // TLS kullanılsın mı (587 port için true)
+	Timeout  time.Duration // Bağlantı timeout süresi (varsayılan: 30s)
+
+	// GELECEK İYİLEŞTİRMELER (TODO Phase 5):
+	// - Connection pooling (SMTP bağlantılarını yeniden kullanma)
+	// - Keep-alive support
+	// - Retry mechanism (geçici hatalar için otomatik retry)
+	// - Rate limiting (saniyede max email sayısı)
+	//
+	// NOT: Go'nun standart smtp paketi connection pooling desteklemiyor.
+	// Custom SMTP client implementasyonu gerekli (örn: github.com/emersion/go-smtp)
 }
 
 // SMTPMailer, SMTP ile email gönderen mailer.

@@ -26,8 +26,10 @@
 package events
 
 import (
+	"context"
 	"fmt"
 	"sync"
+	"time"
 )
 
 // Dispatcher, event'leri yöneten merkezi yapıdır.
@@ -37,10 +39,14 @@ import (
 // - Multiple listeners per event
 // - Wildcard listener desteği
 // - Synchronous ve asynchronous dispatch
+// - Graceful shutdown with context
 type Dispatcher struct {
 	mu        sync.RWMutex
 	listeners map[string][]Listener
 	logger    Logger
+	wg        sync.WaitGroup // Async event'leri takip etmek için
+	ctx       context.Context
+	cancel    context.CancelFunc
 }
 
 // NewDispatcher, yeni bir Dispatcher oluşturur.
@@ -54,10 +60,18 @@ type Dispatcher struct {
 // Örnek:
 //
 //	dispatcher := events.NewDispatcher(logger)
+//
+// Shutdown:
+// Dispatcher kullanımı bittiğinde mutlaka Shutdown() çağrılmalıdır:
+//
+//	defer dispatcher.Shutdown()
 func NewDispatcher(logger Logger) *Dispatcher {
+	ctx, cancel := context.WithCancel(context.Background())
 	return &Dispatcher{
 		listeners: make(map[string][]Listener),
 		logger:    logger,
+		ctx:       ctx,
+		cancel:    cancel,
 	}
 }
 
@@ -154,8 +168,31 @@ func (d *Dispatcher) Dispatch(event Event) error {
 // Uyarı:
 // Async dispatch edilen event'lerin hatalarını yakalayamazsınız.
 // Hatalar sadece log'a yazılır.
+//
+// GÜVENLİK NOTU:
+// Dispatcher kapatıldıktan sonra DispatchAsync çağrısı yapılmamalıdır.
+// Shutdown() çağrıldıktan sonra async event'ler dispatch edilmez.
 func (d *Dispatcher) DispatchAsync(event Event) {
+	// Shutdown kontrolü
+	select {
+	case <-d.ctx.Done():
+		d.logger.Printf("⚠️  Dispatcher is shutting down, async event '%s' ignored", event.Name())
+		return
+	default:
+	}
+
+	d.wg.Add(1)
 	go func() {
+		defer d.wg.Done()
+
+		// Context iptal kontrolü
+		select {
+		case <-d.ctx.Done():
+			d.logger.Printf("⚠️  Async event '%s' cancelled due to shutdown", event.Name())
+			return
+		default:
+		}
+
 		if err := d.Dispatch(event); err != nil {
 			d.logger.Printf("❌ Async dispatch error for '%s': %v", event.Name(), err)
 		}
@@ -310,6 +347,77 @@ func (d *Dispatcher) PrintStats() {
 	d.logger.Printf("\nTotal Events: %d", len(stats))
 	d.logger.Printf("Total Listeners: %d", totalListeners)
 	d.logger.Println("=".repeat(70))
+}
+
+// Shutdown, dispatcher'ı güvenli bir şekilde kapatır.
+//
+// Tüm bekleyen async event'lerin tamamlanmasını bekler.
+// Bu metod, uygulama kapanırken çağrılmalıdır.
+//
+// GÜVENLİK KRİTİK:
+// Shutdown çağrıldıktan sonra yeni async event'ler kabul edilmez.
+// Bu sayede goroutine leak'i önlenir.
+//
+// Örnek:
+//
+//	dispatcher := events.NewDispatcher(logger)
+//	defer dispatcher.Shutdown()
+//
+//	// Event'leri dispatch et
+//	dispatcher.DispatchAsync(event1)
+//	dispatcher.DispatchAsync(event2)
+//
+//	// Shutdown tüm pending event'lerin bitmesini bekler
+func (d *Dispatcher) Shutdown() {
+	d.logger.Println("🔄 Shutting down event dispatcher...")
+
+	// Yeni async event'leri engelle
+	d.cancel()
+
+	// Bekleyen tüm async event'lerin tamamlanmasını bekle
+	d.wg.Wait()
+
+	d.logger.Println("✅ Event dispatcher shutdown complete")
+}
+
+// ShutdownWithTimeout, belirtilen süre içinde dispatcher'ı kapatmaya çalışır.
+//
+// Timeout süresince bekleyen event'lerin tamamlanmasını bekler.
+// Timeout aşılırsa, bekleyen event'ler iptal edilir.
+//
+// Parametre:
+//   - timeout: Maksimum bekleme süresi
+//
+// Döndürür:
+//   - error: Timeout aşılırsa hata döner
+//
+// Örnek:
+//
+//	err := dispatcher.ShutdownWithTimeout(5 * time.Second)
+//	if err != nil {
+//	    log.Println("Timeout: some events may not have completed")
+//	}
+func (d *Dispatcher) ShutdownWithTimeout(timeout time.Duration) error {
+	d.logger.Printf("🔄 Shutting down event dispatcher (timeout: %v)...", timeout)
+
+	// Yeni async event'leri engelle
+	d.cancel()
+
+	// Timeout ile bekle
+	done := make(chan struct{})
+	go func() {
+		d.wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		d.logger.Println("✅ Event dispatcher shutdown complete")
+		return nil
+	case <-time.After(timeout):
+		d.logger.Println("⚠️  Event dispatcher shutdown timeout - some events may not have completed")
+		return fmt.Errorf("shutdown timeout exceeded")
+	}
 }
 
 // -----------------------------------------------------------------------------

@@ -39,8 +39,9 @@ Modern, Laravel-inspired web framework for Go. Built with security, performance,
     - Protected routes
     - Policy-based access control
 
-### 🔄 Phase 3: Queue System (✅ COMPLETED)
+### 🔄 Phase 3: Advanced Features (✅ COMPLETED)
 
+#### Queue System
 - **Redis Queue**
     - Push/Later (immediate/delayed dispatch)
     - Pop (blocking job fetch)
@@ -59,14 +60,123 @@ Modern, Laravel-inspired web framework for Go. Built with security, performance,
     - Concurrent processing
     - Failed job tracking
 
-- **Example Jobs**
-    - SendEmailJob (email queue)
-    - ProcessUploadJob (upload queue)
+#### Event System
+- **Event Dispatcher**
+    - Laravel-inspired event-driven architecture
+    - Multiple listeners per event
+    - Async/sync dispatch
+    - Thread-safe operations
 
-## 📋 Queue Usage
+- **Event Features**
+    - Built-in events (user, email, payment, cache)
+    - Custom event creation
+    - Conditional listeners
+    - Async listeners for slow operations
+    - Event statistics and monitoring
 
-### Dispatching Jobs
-```php
+#### Mail System
+- **SMTP Driver**
+    - Send emails via any SMTP server
+    - Support for Gmail, SendGrid, AWS SES, Mailhog
+    - HTML & plain text emails
+    - File attachments
+    - Multiple recipients (To, Cc, Bcc)
+
+- **Message Builder**
+    - Fluent API for email construction
+    - Priority levels (High, Normal, Low)
+    - Custom headers support
+    - Reply-To support
+
+- **Drivers**
+    - SMTP (production)
+    - Log (development/testing)
+
+#### Storage System
+- **Local Storage**
+    - Local filesystem operations
+    - Path traversal protection
+    - Stream support for large files
+    - Directory management
+    - URL generation
+
+- **Storage Features**
+    - Upload/download files
+    - File existence checks
+    - File size and metadata
+    - Unique name generation
+    - Image detection helpers
+
+## 📋 Usage Examples
+
+### Event System
+
+```go
+// Create dispatcher
+dispatcher := events.NewDispatcher(logger)
+
+// Register listener
+dispatcher.Listen("user.registered", events.ListenerFunc(func(e events.Event) error {
+    user := e.Payload().(*models.User)
+    log.Printf("New user: %s", user.Email)
+    return nil
+}))
+
+// Dispatch event
+event := events.NewUserRegisteredEvent(user)
+dispatcher.Dispatch(event)
+
+// Async dispatch (non-blocking)
+dispatcher.DispatchAsync(event)
+```
+
+### Mail System
+
+```go
+// Configure SMTP (Mailhog for development)
+config := &mail.SMTPConfig{
+    Host: "localhost",
+    Port: 1025,
+    From: mail.Address{Email: "noreply@conduit.com", Name: "Conduit"},
+}
+mailer := mail.NewSMTPMailer(config, logger)
+
+// Send email
+message := mail.NewMessage().
+    To("user@example.com", "John Doe").
+    Subject("Welcome to Conduit!").
+    Body("Thank you for joining.").
+    Html("<h1>Welcome!</h1>")
+
+err := mailer.Send(message)
+```
+
+### Storage System
+
+```go
+// Initialize local storage
+storage, _ := storage.NewLocalStorage("/var/www/uploads", logger)
+storage.SetBaseURL("https://cdn.myapp.com")
+
+// Upload file
+imageData := []byte{...}
+storage.Put("avatars/user-1.jpg", imageData)
+
+// Get URL
+url := storage.Url("avatars/user-1.jpg")
+// → "https://cdn.myapp.com/avatars/user-1.jpg"
+
+// Stream large file
+file, _ := os.Open("large-video.mp4")
+storage.PutFile("videos/video.mp4", file)
+
+// Download
+data, _ := storage.Get("avatars/user-1.jpg")
+```
+
+### Queue System
+
+```go
 // Create a job
 emailJob := jobs.NewSendEmailJob(
     "user@example.com",

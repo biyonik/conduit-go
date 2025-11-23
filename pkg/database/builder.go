@@ -234,6 +234,268 @@ func (qb *QueryBuilder) OrWhere(column string, operator string, value interface{
 	return qb
 }
 
+// WhereIn, belirtilen kolonun değerlerinin bir dizide olup olmadığını kontrol eder.
+//
+// Parametreler:
+//   - column: Kontrol edilecek kolon adı
+//   - values: İzin verilen değerler dizisi
+//
+// Döndürür:
+//   - *QueryBuilder: Zincirleme için kendi instance'ını döner
+//
+// Örnek:
+//
+//	qb.WhereIn("status", []interface{}{"active", "pending", "approved"})
+//	→ SQL: WHERE `status` IN (?, ?, ?)
+//
+// Güvenlik Notu:
+// Tüm değerler prepared statement ile bağlanır, SQL injection korumalıdır.
+func (qb *QueryBuilder) WhereIn(column string, values []interface{}) *QueryBuilder {
+	validateIdentifier(column, "column")
+
+	qb.wheres = append(qb.wheres, WhereClause{
+		Column:   column,
+		Operator: "IN",
+		Value:    values,
+		Boolean:  "AND",
+	})
+	return qb
+}
+
+// WhereNotIn, belirtilen kolonun değerlerinin bir dizide olmadığını kontrol eder.
+//
+// Parametreler:
+//   - column: Kontrol edilecek kolon adı
+//   - values: Hariç tutulacak değerler dizisi
+//
+// Döndürür:
+//   - *QueryBuilder: Zincirleme için kendi instance'ını döner
+//
+// Örnek:
+//
+//	qb.WhereNotIn("role", []interface{}{"banned", "suspended"})
+//	→ SQL: WHERE `role` NOT IN (?, ?)
+func (qb *QueryBuilder) WhereNotIn(column string, values []interface{}) *QueryBuilder {
+	validateIdentifier(column, "column")
+
+	qb.wheres = append(qb.wheres, WhereClause{
+		Column:   column,
+		Operator: "NOT IN",
+		Value:    values,
+		Boolean:  "AND",
+	})
+	return qb
+}
+
+// WhereBetween, belirtilen kolonun değerinin iki değer arasında olup olmadığını kontrol eder.
+//
+// Parametreler:
+//   - column: Kontrol edilecek kolon adı
+//   - min: Minimum değer
+//   - max: Maksimum değer
+//
+// Döndürür:
+//   - *QueryBuilder: Zincirleme için kendi instance'ını döner
+//
+// Örnek:
+//
+//	qb.WhereBetween("age", 18, 65)
+//	→ SQL: WHERE `age` BETWEEN ? AND ?
+//
+//	qb.WhereBetween("created_at", "2024-01-01", "2024-12-31")
+//	→ SQL: WHERE `created_at` BETWEEN ? AND ?
+func (qb *QueryBuilder) WhereBetween(column string, min, max interface{}) *QueryBuilder {
+	validateIdentifier(column, "column")
+
+	qb.wheres = append(qb.wheres, WhereClause{
+		Column:   column,
+		Operator: "BETWEEN",
+		Value:    []interface{}{min, max},
+		Boolean:  "AND",
+	})
+	return qb
+}
+
+// WhereNotBetween, belirtilen kolonun değerinin iki değer arasında olmadığını kontrol eder.
+//
+// Parametreler:
+//   - column: Kontrol edilecek kolon adı
+//   - min: Minimum değer
+//   - max: Maksimum değer
+//
+// Döndürür:
+//   - *QueryBuilder: Zincirleme için kendi instance'ını döner
+//
+// Örnek:
+//
+//	qb.WhereNotBetween("score", 0, 50)
+//	→ SQL: WHERE `score` NOT BETWEEN ? AND ?
+func (qb *QueryBuilder) WhereNotBetween(column string, min, max interface{}) *QueryBuilder {
+	validateIdentifier(column, "column")
+
+	qb.wheres = append(qb.wheres, WhereClause{
+		Column:   column,
+		Operator: "NOT BETWEEN",
+		Value:    []interface{}{min, max},
+		Boolean:  "AND",
+	})
+	return qb
+}
+
+// WhereNull, belirtilen kolonun NULL olup olmadığını kontrol eder.
+//
+// Parametre:
+//   - column: Kontrol edilecek kolon adı
+//
+// Döndürür:
+//   - *QueryBuilder: Zincirleme için kendi instance'ını döner
+//
+// Örnek:
+//
+//	qb.WhereNull("deleted_at")
+//	→ SQL: WHERE `deleted_at` IS NULL
+//
+// Kullanım Senaryosu:
+// Soft delete pattern'inde aktif kayıtları bulmak için kullanılır.
+func (qb *QueryBuilder) WhereNull(column string) *QueryBuilder {
+	validateIdentifier(column, "column")
+
+	qb.wheres = append(qb.wheres, WhereClause{
+		Column:   column,
+		Operator: "IS",
+		Value:    nil,
+		Boolean:  "AND",
+	})
+	return qb
+}
+
+// WhereNotNull, belirtilen kolonun NULL olmadığını kontrol eder.
+//
+// Parametre:
+//   - column: Kontrol edilecek kolon adı
+//
+// Döndürür:
+//   - *QueryBuilder: Zincirleme için kendi instance'ını döner
+//
+// Örnek:
+//
+//	qb.WhereNotNull("email_verified_at")
+//	→ SQL: WHERE `email_verified_at` IS NOT NULL
+//
+// Kullanım Senaryosu:
+// Doğrulanmış email'i olan kullanıcıları bulmak için kullanılır.
+func (qb *QueryBuilder) WhereNotNull(column string) *QueryBuilder {
+	validateIdentifier(column, "column")
+
+	qb.wheres = append(qb.wheres, WhereClause{
+		Column:   column,
+		Operator: "IS NOT",
+		Value:    nil,
+		Boolean:  "AND",
+	})
+	return qb
+}
+
+// WhereDate, belirtilen tarih kolonunun belirli bir tarihe eşit olup olmadığını kontrol eder.
+//
+// Parametreler:
+//   - column: Kontrol edilecek tarih kolonu
+//   - date: Karşılaştırılacak tarih (string format: "2024-01-15")
+//
+// Döndürür:
+//   - *QueryBuilder: Zincirleme için kendi instance'ını döner
+//
+// Örnek:
+//
+//	qb.WhereDate("created_at", "2024-01-15")
+//	→ SQL: WHERE DATE(`created_at`) = ?
+func (qb *QueryBuilder) WhereDate(column string, date string) *QueryBuilder {
+	validateIdentifier(column, "column")
+
+	qb.wheres = append(qb.wheres, WhereClause{
+		Column:   "DATE(" + column + ")",
+		Operator: "=",
+		Value:    date,
+		Boolean:  "AND",
+	})
+	return qb
+}
+
+// WhereYear, belirtilen tarih kolonunun yılını kontrol eder.
+//
+// Parametreler:
+//   - column: Kontrol edilecek tarih kolonu
+//   - year: Karşılaştırılacak yıl
+//
+// Döndürür:
+//   - *QueryBuilder: Zincirleme için kendi instance'ını döner
+//
+// Örnek:
+//
+//	qb.WhereYear("created_at", 2024)
+//	→ SQL: WHERE YEAR(`created_at`) = ?
+func (qb *QueryBuilder) WhereYear(column string, year int) *QueryBuilder {
+	validateIdentifier(column, "column")
+
+	qb.wheres = append(qb.wheres, WhereClause{
+		Column:   "YEAR(" + column + ")",
+		Operator: "=",
+		Value:    year,
+		Boolean:  "AND",
+	})
+	return qb
+}
+
+// WhereMonth, belirtilen tarih kolonunun ayını kontrol eder.
+//
+// Parametreler:
+//   - column: Kontrol edilecek tarih kolonu
+//   - month: Karşılaştırılacak ay (1-12)
+//
+// Döndürür:
+//   - *QueryBuilder: Zincirleme için kendi instance'ını döner
+//
+// Örnek:
+//
+//	qb.WhereMonth("created_at", 12) // Aralık ayı
+//	→ SQL: WHERE MONTH(`created_at`) = ?
+func (qb *QueryBuilder) WhereMonth(column string, month int) *QueryBuilder {
+	validateIdentifier(column, "column")
+
+	qb.wheres = append(qb.wheres, WhereClause{
+		Column:   "MONTH(" + column + ")",
+		Operator: "=",
+		Value:    month,
+		Boolean:  "AND",
+	})
+	return qb
+}
+
+// WhereDay, belirtilen tarih kolonunun gününü kontrol eder.
+//
+// Parametreler:
+//   - column: Kontrol edilecek tarih kolonu
+//   - day: Karşılaştırılacak gün (1-31)
+//
+// Döndürür:
+//   - *QueryBuilder: Zincirleme için kendi instance'ını döner
+//
+// Örnek:
+//
+//	qb.WhereDay("created_at", 15) // Ayın 15'i
+//	→ SQL: WHERE DAY(`created_at`) = ?
+func (qb *QueryBuilder) WhereDay(column string, day int) *QueryBuilder {
+	validateIdentifier(column, "column")
+
+	qb.wheres = append(qb.wheres, WhereClause{
+		Column:   "DAY(" + column + ")",
+		Operator: "=",
+		Value:    day,
+		Boolean:  "AND",
+	})
+	return qb
+}
+
 // OrderBy, sorgu sonuçlarını belirtilen kolona göre sıralar.
 //
 // GÜVENLİK İYİLEŞTİRMESİ:

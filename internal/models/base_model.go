@@ -40,6 +40,16 @@ type BaseModel struct {
 	UpdatedAt time.Time `json:"updated_at" db:"updated_at"`
 }
 
+// Initialize
+//
+// CreatedAt ve UpdatedAt alanlarını şu anki zamana ayarlar.
+// Yeni bir kayıt oluşturulmadan önce çağrılır.
+func (m *BaseModel) Initialize() {
+	now := time.Now()
+	m.CreatedAt = now
+	m.UpdatedAt = now
+}
+
 // Touch
 //
 // UpdatedAt alanını şu anki zamana günceller.

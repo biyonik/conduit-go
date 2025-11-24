@@ -52,28 +52,45 @@ func generateBasicController(name string) string {
 	return fmt.Sprintf(`package controllers
 
 import (
+	"log"
 	"net/http"
+	"reflect"
+
+	conduitReq "github.com/biyonik/conduit-go/internal/http/request"
+	conduitRes "github.com/biyonik/conduit-go/internal/http/response"
+	"github.com/biyonik/conduit-go/pkg/container"
 )
 
 // %s handles requests for the %s resource.
 type %s struct {
-	// Add dependencies here (e.g., services, repositories)
+	Logger *log.Logger
+	// TODO: Add additional dependencies here (e.g., repositories, services)
 }
 
-// New%s creates a new %s instance.
-func New%s() *%s {
-	return &%s{}
+// New%s creates a new %s instance using dependency injection.
+func New%s(c *container.Container) (*%s, error) {
+	logger := c.MustGet(reflect.TypeOf((*log.Logger)(nil))).(*log.Logger)
+
+	return &%s{
+		Logger: logger,
+		// TODO: Initialize additional dependencies from container
+	}, nil
 }
 
 // Handle is a sample handler method.
 //
-// Örnek:
-//   router.HandleFunc("/path", controller.Handle)
-func (c *%s) Handle(w http.ResponseWriter, r *http.Request) {
+// Example usage:
+//   router.GET("/path", controller.Handle)
+func (c *%s) Handle(w http.ResponseWriter, r *conduitReq.Request) {
+	c.Logger.Println("📝 Handling request...")
+
 	// TODO: Implement handler logic
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	w.Write([]byte("{\"message\": \"success\"}"))
+
+	response := map[string]interface{}{
+		"message": "success",
+	}
+
+	conduitRes.Success(w, 200, response, nil)
 }
 `, name, name, name, name, name, name, name, name, name)
 }
@@ -82,83 +99,135 @@ func generateResourceController(name string, api bool) string {
 	return fmt.Sprintf(`package controllers
 
 import (
-	"encoding/json"
+	"log"
 	"net/http"
+	"reflect"
+
+	conduitReq "github.com/biyonik/conduit-go/internal/http/request"
+	conduitRes "github.com/biyonik/conduit-go/internal/http/response"
+	"github.com/biyonik/conduit-go/pkg/container"
 )
 
 // %s handles CRUD operations for the resource.
 type %s struct {
-	// Add dependencies here (e.g., services, repositories)
+	Logger *log.Logger
+	// TODO: Add repositories and services (e.g., ResourceRepository)
 }
 
-// New%s creates a new %s instance.
-func New%s() *%s {
-	return &%s{}
+// New%s creates a new %s instance using dependency injection.
+func New%s(c *container.Container) (*%s, error) {
+	logger := c.MustGet(reflect.TypeOf((*log.Logger)(nil))).(*log.Logger)
+
+	return &%s{
+		Logger: logger,
+		// TODO: Initialize repositories from container
+	}, nil
 }
 
 // Index displays a listing of the resource.
 //
 // HTTP Method: GET
 // Route: /resource
-func (c *%s) Index(w http.ResponseWriter, r *http.Request) {
-	// TODO: Fetch all resources
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]interface{}{
+func (c *%s) Index(w http.ResponseWriter, r *conduitReq.Request) {
+	c.Logger.Println("📋 Fetching all resources...")
+
+	// TODO: Fetch all resources from repository
+	// resources, err := c.ResourceRepository.GetAll(page, perPage)
+
+	response := map[string]interface{}{
 		"data": []interface{}{},
-	})
+	}
+
+	conduitRes.Success(w, 200, response, nil)
 }
 
 // Show displays the specified resource.
 //
 // HTTP Method: GET
 // Route: /resource/{id}
-func (c *%s) Show(w http.ResponseWriter, r *http.Request) {
+func (c *%s) Show(w http.ResponseWriter, r *conduitReq.Request) {
+	// TODO: Get ID from route parameters
+	// id := r.RouteParam("id")
+
+	c.Logger.Println("🔍 Fetching resource by ID...")
+
 	// TODO: Fetch resource by ID
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]interface{}{
+	// resource, err := c.ResourceRepository.FindByID(id)
+	// if err == sql.ErrNoRows {
+	//     conduitRes.Error(w, 404, "Resource not found")
+	//     return
+	// }
+
+	response := map[string]interface{}{
 		"data": nil,
-	})
+	}
+
+	conduitRes.Success(w, 200, response, nil)
 }
 
 // Store stores a newly created resource.
 //
 // HTTP Method: POST
 // Route: /resource
-func (c *%s) Store(w http.ResponseWriter, r *http.Request) {
-	// TODO: Validate and create resource
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(map[string]interface{}{
+func (c *%s) Store(w http.ResponseWriter, r *conduitReq.Request) {
+	c.Logger.Println("➕ Creating new resource...")
+
+	// TODO: Parse request body
+	// var reqData struct { ... }
+	// if err := r.ParseJSON(&reqData); err != nil {
+	//     conduitRes.Error(w, 400, "Invalid JSON format")
+	//     return
+	// }
+
+	// TODO: Validate request
+	// TODO: Create resource in repository
+
+	response := map[string]interface{}{
 		"message": "Resource created successfully",
-	})
+	}
+
+	conduitRes.Success(w, 201, response, nil)
 }
 
 // Update updates the specified resource.
 //
 // HTTP Method: PUT/PATCH
 // Route: /resource/{id}
-func (c *%s) Update(w http.ResponseWriter, r *http.Request) {
-	// TODO: Validate and update resource
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]interface{}{
+func (c *%s) Update(w http.ResponseWriter, r *conduitReq.Request) {
+	// TODO: Get ID from route parameters
+	// id := r.RouteParam("id")
+
+	c.Logger.Println("✏️  Updating resource...")
+
+	// TODO: Parse request body
+	// TODO: Validate request
+	// TODO: Update resource in repository
+
+	response := map[string]interface{}{
 		"message": "Resource updated successfully",
-	})
+	}
+
+	conduitRes.Success(w, 200, response, nil)
 }
 
 // Destroy removes the specified resource.
 //
 // HTTP Method: DELETE
 // Route: /resource/{id}
-func (c *%s) Destroy(w http.ResponseWriter, r *http.Request) {
-	// TODO: Delete resource
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-	json.NewEncoder(w).Encode(map[string]interface{}{
+func (c *%s) Destroy(w http.ResponseWriter, r *conduitReq.Request) {
+	// TODO: Get ID from route parameters
+	// id := r.RouteParam("id")
+
+	c.Logger.Println("🗑️  Deleting resource...")
+
+	// TODO: Delete resource from repository (soft delete)
+	// err := c.ResourceRepository.Delete(id)
+
+	response := map[string]interface{}{
 		"message": "Resource deleted successfully",
-	})
+	}
+
+	conduitRes.Success(w, 200, response, nil)
 }
 `, name, name, name, name, name, name, name, name, name, name, name, name)
 }
@@ -179,37 +248,134 @@ func generateModel(name string, withMigration bool) {
 	content := fmt.Sprintf(`package models
 
 import (
-	"time"
+	"database/sql"
+
+	"github.com/biyonik/conduit-go/pkg/database"
 )
 
 // %s model represents a %s record.
 type %s struct {
-	ID        uint       ` + "`json:\"id\" db:\"id\"`" + `
-	CreatedAt time.Time  ` + "`json:\"created_at\" db:\"created_at\"`" + `
-	UpdatedAt time.Time  ` + "`json:\"updated_at\" db:\"updated_at\"`" + `
-	DeletedAt *time.Time ` + "`json:\"deleted_at,omitempty\" db:\"deleted_at\"`" + ` // Soft delete
-
+	BaseModel
 	// TODO: Add model fields here
+	// Example:
+	// Name  string ` + "`json:\"name\" db:\"name\"`" + `
+	// Email string ` + "`json:\"email\" db:\"email\"`" + `
 }
 
-// TableName returns the table name for this model.
-func (m *%s) TableName() string {
-	return "%s"
+// %sRepository handles database operations for %s.
+type %sRepository struct {
+	db      *sql.DB
+	grammar database.Grammar
 }
 
-// BeforeCreate is called before creating a new record.
-func (m *%s) BeforeCreate() error {
-	m.CreatedAt = time.Now()
-	m.UpdatedAt = time.Now()
-	return nil
+// New%sRepository creates a new %sRepository instance.
+func New%sRepository(db *sql.DB, grammar database.Grammar) *%sRepository {
+	return &%sRepository{
+		db:      db,
+		grammar: grammar,
+	}
 }
 
-// BeforeUpdate is called before updating a record.
-func (m *%s) BeforeUpdate() error {
-	m.UpdatedAt = time.Now()
-	return nil
+// newBuilder creates a new query builder for this repository.
+func (r *%sRepository) newBuilder() *database.QueryBuilder {
+	return database.NewBuilder(r.db, r.grammar)
 }
-`, name, name, name, name, toSnakeCase(pluralize(name)), name, name)
+
+// FindByID finds a %s by ID.
+func (r *%sRepository) FindByID(id int64) (*%s, error) {
+	var record %s
+	err := r.newBuilder().
+		Table("%s").
+		Where("id", "=", id).
+		Where("deleted_at", "IS", nil). // Soft delete check
+		First(&record)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &record, nil
+}
+
+// GetAll retrieves all %s records with pagination.
+func (r *%sRepository) GetAll(page, perPage int) ([]%s, error) {
+	var records []%s
+
+	offset := (page - 1) * perPage
+
+	err := r.newBuilder().
+		Table("%s").
+		Where("deleted_at", "IS", nil).
+		OrderBy("created_at", "DESC").
+		Limit(perPage).
+		Offset(offset).
+		Get(&records)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return records, nil
+}
+
+// Create creates a new %s record.
+func (r *%sRepository) Create(record *%s) (int64, error) {
+	record.Initialize() // Sets CreatedAt and UpdatedAt
+
+	result, err := r.newBuilder().ExecInsert(map[string]interface{}{
+		// TODO: Add fields to insert
+		// "name":       record.Name,
+		"created_at": record.CreatedAt,
+		"updated_at": record.UpdatedAt,
+	})
+
+	if err != nil {
+		return 0, err
+	}
+
+	return result.LastInsertId()
+}
+
+// Update updates an existing %s record.
+func (r *%sRepository) Update(record *%s) error {
+	record.Touch() // Updates UpdatedAt
+
+	data := map[string]interface{}{
+		// TODO: Add fields to update
+		// "name":       record.Name,
+		"updated_at": record.UpdatedAt,
+	}
+
+	_, err := r.newBuilder().
+		Table("%s").
+		Where("id", "=", record.ID).
+		ExecUpdate(data)
+
+	return err
+}
+
+// Delete soft deletes a %s record.
+func (r *%sRepository) Delete(id int64) error {
+	_, err := r.newBuilder().
+		Table("%s").
+		Where("id", "=", id).
+		ExecUpdate(map[string]interface{}{
+			"deleted_at": r.newBuilder().Now(),
+		})
+
+	return err
+}
+`,
+		name, name, name,
+		name, name, name,
+		name, name, name, name, name,
+		name,
+		name, name, name, name, toSnakeCase(pluralize(name)),
+		pluralize(name), name, name, name, toSnakeCase(pluralize(name)),
+		name, name, name,
+		name, name, name,
+		toSnakeCase(pluralize(name)),
+		name, name, name, toSnakeCase(pluralize(name)))
 
 	if err := os.WriteFile(filename, []byte(content), 0644); err != nil {
 		fmt.Printf("❌ Failed to create file: %v\n", err)
@@ -241,47 +407,68 @@ func generateMiddleware(name string) {
 
 	filename := filepath.Join(dir, toSnakeCase(name)+".go")
 
+	middlewareName := strings.TrimSuffix(name, "Middleware")
+
 	content := fmt.Sprintf(`package middleware
 
 import (
 	"net/http"
+
+	"github.com/biyonik/conduit-go/internal/http/response"
 )
+
+// Middleware is a function that wraps an http.Handler.
+type Middleware func(http.Handler) http.Handler
 
 // %s is a middleware that...
 // TODO: Describe what this middleware does
-type %s struct {
-	// Add dependencies here
+//
+// Example usage:
+//   r.Use(middleware.%s())
+//   r.GET("/path", handler).Middleware(middleware.%s())
+func %s() Middleware {
+	return %sWithConfig(nil)
 }
 
-// New%s creates a new %s instance.
-func New%s() *%s {
-	return &%s{}
+// %sConfig holds configuration for %s middleware.
+type %sConfig struct {
+	// TODO: Add configuration fields here
+	// Example:
+	// Enabled bool
+	// Timeout time.Duration
 }
 
-// Handle wraps an http.Handler and applies middleware logic.
-func (m *%s) Handle(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// TODO: Implement middleware logic before request
-
-		// Call next handler
-		next.ServeHTTP(w, r)
-
-		// TODO: Implement middleware logic after request
-	})
-}
-
-// Func wraps an http.HandlerFunc and applies middleware logic.
-func (m *%s) Func(next http.HandlerFunc) http.HandlerFunc {
-	return func(w http.ResponseWriter, r *http.Request) {
-		// TODO: Implement middleware logic before request
-
-		// Call next handler
-		next(w, r)
-
-		// TODO: Implement middleware logic after request
+// Default%sConfig returns the default configuration.
+func Default%sConfig() *%sConfig {
+	return &%sConfig{
+		// TODO: Set default values
 	}
 }
-`, name, name, name, name, name, name, name, name, name)
+
+// %sWithConfig returns the middleware with custom configuration.
+func %sWithConfig(config *%sConfig) Middleware {
+	if config == nil {
+		config = Default%sConfig()
+	}
+
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			// TODO: Implement middleware logic before request
+
+			// Example: Check some condition
+			// if !someCondition {
+			//     response.Error(w, http.StatusForbidden, "Access denied")
+			//     return
+			// }
+
+			// Call next handler
+			next.ServeHTTP(w, r)
+
+			// TODO: Implement middleware logic after request (if needed)
+		})
+	}
+}
+`, middlewareName, middlewareName, middlewareName, middlewareName, middlewareName, middlewareName, middlewareName, middlewareName, middlewareName, middlewareName, middlewareName, middlewareName, middlewareName, middlewareName, middlewareName, middlewareName)
 
 	if err := os.WriteFile(filename, []byte(content), 0644); err != nil {
 		fmt.Printf("❌ Failed to create file: %v\n", err)
@@ -312,46 +499,67 @@ func generateJob(name string) {
 	content := fmt.Sprintf(`package jobs
 
 import (
-	"context"
-	"fmt"
+	"encoding/json"
+	"log"
+
+	"github.com/biyonik/conduit-go/pkg/queue"
 )
 
 // %s represents a queued job.
 type %s struct {
+	queue.BaseJob
 	// TODO: Add job properties
+	// Example:
+	// UserID int64  ` + "`json:\"user_id\"`" + `
+	// Email  string ` + "`json:\"email\"`" + `
+
+	// Dependencies (not serialized - inject when executing)
+	// Mailer mail.Mailer ` + "`json:\"-\"`" + `
 }
 
 // New%s creates a new %s instance.
 func New%s() *%s {
-	return &%s{}
+	return &%s{
+		BaseJob: queue.BaseJob{
+			MaxAttempts: 3, // Retry up to 3 times on failure
+		},
+	}
 }
 
 // Handle executes the job.
-func (j *%s) Handle(ctx context.Context) error {
-	// TODO: Implement job logic
-	fmt.Println("Executing %s...")
+func (j *%s) Handle() error {
+	log.Printf("⚙️  Executing %s job...")
 
-	// Example: Send email, process image, etc.
+	// TODO: Implement job logic
+	// Example: Send email, process image, update database, etc.
+
+	log.Printf("✅ %s job completed successfully")
+	return nil
+}
+
+// Failed is called when the job fails after all retry attempts.
+func (j *%s) Failed(err error) error {
+	log.Printf("❌ %s job failed: %%s (error: %%v)", j.ID, err)
+
+	// TODO: Handle job failure
+	// Examples:
+	// - Log to database
+	// - Send notification to admin
+	// - Update status in monitoring system
 
 	return nil
 }
 
-// Failed is called when the job fails.
-func (j *%s) Failed(err error) {
-	// TODO: Handle job failure (log, notify, etc.)
-	fmt.Printf("❌ %s failed: %%v\n", err)
+// GetPayload serializes the job to JSON.
+func (j *%s) GetPayload() ([]byte, error) {
+	return json.Marshal(j)
 }
 
-// MaxRetries returns the maximum number of retry attempts.
-func (j *%s) MaxRetries() int {
-	return 3
+// SetPayload deserializes the job from JSON.
+func (j *%s) SetPayload(data []byte) error {
+	return json.Unmarshal(data, j)
 }
-
-// Timeout returns the job execution timeout.
-func (j *%s) Timeout() int {
-	return 60 // seconds
-}
-`, name, name, name, name, name, name, name, name, name, name, name, name, name)
+`, name, name, name, name, name, name, name, name, name, name, name, name, name, name)
 
 	if err := os.WriteFile(filename, []byte(content), 0644); err != nil {
 		fmt.Printf("❌ Failed to create file: %v\n", err)

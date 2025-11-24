@@ -5,9 +5,12 @@ package request
 
 import (
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"strings"
+
+	"github.com/biyonik/conduit-go/pkg/auth"
 )
 
 // @author    Ahmet Altun
@@ -163,4 +166,182 @@ func (r *Request) UserAgent() string {
 func (r *Request) Accepts(contentType string) bool {
 	accept := r.Header.Get("Accept")
 	return strings.Contains(accept, contentType) || strings.Contains(accept, "*/*")
+}
+
+// AuthUser retrieves the authenticated user from the request context.
+//
+// This method extracts the user that was set by the Auth middleware.
+// It returns an error if the user is not authenticated or if the context
+// value is not of the correct type.
+//
+// Returns:
+//   - auth.User: The authenticated user
+//   - error: Error if user is not authenticated
+//
+// Example:
+//
+//	func (c *ProfileController) Show(w http.ResponseWriter, r *Request) {
+//	    user, err := r.AuthUser()
+//	    if err != nil {
+//	        response.Unauthorized(w, "")
+//	        return
+//	    }
+//	    userID := user.GetID()
+//	}
+//
+// This eliminates the repetitive pattern:
+//
+//	contextUser := r.Context().Value("user")
+//	if contextUser == nil {
+//	    conduitRes.Error(w, 401, "Unauthorized")
+//	    return
+//	}
+//	authUser, ok := contextUser.(auth.User)
+//	if !ok {
+//	    conduitRes.Error(w, 401, "Unauthorized")
+//	    return
+//	}
+func (r *Request) AuthUser() (auth.User, error) {
+	contextUser := r.Context().Value("user")
+	if contextUser == nil {
+		return nil, errors.New("unauthorized: no user in context")
+	}
+
+	authUser, ok := contextUser.(auth.User)
+	if !ok {
+		return nil, errors.New("unauthorized: invalid user type")
+	}
+
+	return authUser, nil
+}
+
+// MustAuthUser retrieves the authenticated user from context, panicking if not found.
+//
+// This is useful in handlers that are guaranteed to have authentication middleware
+// applied. Use with caution.
+//
+// Returns:
+//   - auth.User: The authenticated user
+//
+// Panics:
+//   - If user is not authenticated or type assertion fails
+//
+// Example:
+//
+//	func (c *ProfileController) Show(w http.ResponseWriter, r *Request) {
+//	    user := r.MustAuthUser() // Panic if not authenticated
+//	    userID := user.GetID()
+//	}
+func (r *Request) MustAuthUser() auth.User {
+	user, err := r.AuthUser()
+	if err != nil {
+		panic(err)
+	}
+	return user
+}
+
+// AuthUserID retrieves the authenticated user's ID from context.
+//
+// This is a convenience method that's faster than AuthUser() when you only
+// need the user ID.
+//
+// Returns:
+//   - int64: User ID (0 if not authenticated)
+//   - error: Error if user is not authenticated
+//
+// Example:
+//
+//	userID, err := r.AuthUserID()
+//	if err != nil {
+//	    response.Unauthorized(w, "")
+//	    return
+//	}
+func (r *Request) AuthUserID() (int64, error) {
+	userID := r.Context().Value("user_id")
+	if userID == nil {
+		return 0, errors.New("unauthorized: no user_id in context")
+	}
+
+	id, ok := userID.(int64)
+	if !ok {
+		return 0, errors.New("unauthorized: invalid user_id type")
+	}
+
+	return id, nil
+}
+
+// AuthUserEmail retrieves the authenticated user's email from context.
+//
+// Returns:
+//   - string: User email (empty if not authenticated)
+//   - error: Error if user is not authenticated
+//
+// Example:
+//
+//	email, err := r.AuthUserEmail()
+//	if err != nil {
+//	    response.Unauthorized(w, "")
+//	    return
+//	}
+func (r *Request) AuthUserEmail() (string, error) {
+	email := r.Context().Value("user_email")
+	if email == nil {
+		return "", errors.New("unauthorized: no user_email in context")
+	}
+
+	str, ok := email.(string)
+	if !ok {
+		return "", errors.New("unauthorized: invalid user_email type")
+	}
+
+	return str, nil
+}
+
+// AuthUserRole retrieves the authenticated user's role from context.
+//
+// Returns:
+//   - string: User role (empty if not authenticated)
+//   - error: Error if user is not authenticated
+//
+// Example:
+//
+//	role, err := r.AuthUserRole()
+//	if err != nil {
+//	    response.Unauthorized(w, "")
+//	    return
+//	}
+//	if role != "admin" {
+//	    response.Forbidden(w, "")
+//	    return
+//	}
+func (r *Request) AuthUserRole() (string, error) {
+	role := r.Context().Value("user_role")
+	if role == nil {
+		return "", errors.New("unauthorized: no user_role in context")
+	}
+
+	str, ok := role.(string)
+	if !ok {
+		return "", errors.New("unauthorized: invalid user_role type")
+	}
+
+	return str, nil
+}
+
+// IsAuthenticated checks if the request has an authenticated user.
+//
+// This is a simple boolean check without error handling.
+//
+// Returns:
+//   - bool: true if user is authenticated, false otherwise
+//
+// Example:
+//
+//	if !r.IsAuthenticated() {
+//	    response.Unauthorized(w, "")
+//	    return
+//	}
+func (r *Request) IsAuthenticated() bool {
+	_, err := r.AuthUser()
+	return err == nil
 }
